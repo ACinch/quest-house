@@ -62,7 +62,7 @@ export default function SkillsView() {
                       userId: activeUser,
                       branchId: branch.id,
                       skillId,
-                      confirmedBy: activeUser !== "winter" ? "self" : "mom",
+                      confirmedBy: activeUser !== "winter" ? "self" : "rebekah",
                     })
                   }
                 />

@@ -17,8 +17,8 @@ export function rankFor(xp: number): string {
   return rank;
 }
 
-const ALL: UserId[] = ["winter", "mom", "maarten"];
-const ADULTS: UserId[] = ["mom", "maarten"];
+const ALL: UserId[] = ["winter", "rebekah", "maarten"];
+const ADULTS: UserId[] = ["rebekah", "maarten"];
 const WINTER_ONLY: UserId[] = ["winter"];
 
 export const SKILL_BRANCHES: SkillBranch[] = [
@@ -97,67 +97,67 @@ export const SKILL_BRANCHES: SkillBranch[] = [
 
   // ==== MOM BRANCHES ====
   {
-    id: "mom_kitchen_arts",
+    id: "rebekah_kitchen_arts",
     name: "Kitchen Arts",
     icon: "🍳",
     description: "Command the kitchen.",
-    users: ["mom"],
+    users: ["rebekah"],
     skills: [
-      { id: "counter_commander", branchId: "mom_kitchen_arts", name: "Counter Commander", flavor: "Commanding the counters", description: "Clear and wipe a counter zone", xp: 8, order: 1 },
-      { id: "dish_master", branchId: "mom_kitchen_arts", name: "Dish Master", flavor: "Ruling the dish kingdom", description: "Run a full dish cycle", xp: 10, order: 2 },
-      { id: "appliance_warden", branchId: "mom_kitchen_arts", name: "Appliance Warden", flavor: "Tending the magical machines", description: "Wipe stove, microwave, sink", xp: 12, order: 3 },
-      { id: "kitchen_overlord", branchId: "mom_kitchen_arts", name: "Kitchen Overlord", flavor: "Total kitchen domination", description: "Full kitchen reset", xp: 25, order: 4 },
+      { id: "counter_commander", branchId: "rebekah_kitchen_arts", name: "Counter Commander", flavor: "Commanding the counters", description: "Clear and wipe a counter zone", xp: 8, order: 1 },
+      { id: "dish_master", branchId: "rebekah_kitchen_arts", name: "Dish Master", flavor: "Ruling the dish kingdom", description: "Run a full dish cycle", xp: 10, order: 2 },
+      { id: "appliance_warden", branchId: "rebekah_kitchen_arts", name: "Appliance Warden", flavor: "Tending the magical machines", description: "Wipe stove, microwave, sink", xp: 12, order: 3 },
+      { id: "kitchen_overlord", branchId: "rebekah_kitchen_arts", name: "Kitchen Overlord", flavor: "Total kitchen domination", description: "Full kitchen reset", xp: 25, order: 4 },
     ],
   },
   {
-    id: "mom_surface_ops",
+    id: "rebekah_surface_ops",
     name: "Surface Ops",
     icon: "🧹",
     description: "Floors and surfaces stay shiny.",
-    users: ["mom"],
+    users: ["rebekah"],
     skills: [
-      { id: "table_wiper", branchId: "mom_surface_ops", name: "Table Wiper", flavor: "Polishing the enchantment table", description: "Wipe surfaces in a room", xp: 8, order: 1 },
-      { id: "floor_sweeper", branchId: "mom_surface_ops", name: "Floor Sweeper", flavor: "Clearing the mine floor", description: "Sweep one room", xp: 8, order: 2 },
-      { id: "vacuum_operator", branchId: "mom_surface_ops", name: "Vacuum Operator", flavor: "Deploying the iron golem", description: "Vacuum one room", xp: 10, order: 3 },
-      { id: "surface_commander", branchId: "mom_surface_ops", name: "Surface Commander", flavor: "Base maintenance chief", description: "Full surface clean of a room", xp: 20, order: 4 },
+      { id: "table_wiper", branchId: "rebekah_surface_ops", name: "Table Wiper", flavor: "Polishing the enchantment table", description: "Wipe surfaces in a room", xp: 8, order: 1 },
+      { id: "floor_sweeper", branchId: "rebekah_surface_ops", name: "Floor Sweeper", flavor: "Clearing the mine floor", description: "Sweep one room", xp: 8, order: 2 },
+      { id: "vacuum_operator", branchId: "rebekah_surface_ops", name: "Vacuum Operator", flavor: "Deploying the iron golem", description: "Vacuum one room", xp: 10, order: 3 },
+      { id: "surface_commander", branchId: "rebekah_surface_ops", name: "Surface Commander", flavor: "Base maintenance chief", description: "Full surface clean of a room", xp: 20, order: 4 },
     ],
   },
   {
-    id: "mom_bathroom_ops",
+    id: "rebekah_bathroom_ops",
     name: "Bathroom Ops",
     icon: "🚽",
     description: "The half-bath stays habitable.",
-    users: ["mom"],
+    users: ["rebekah"],
     skills: [
-      { id: "sink_shiner", branchId: "mom_bathroom_ops", name: "Sink Shiner", flavor: "Polishing the basin", description: "Wipe sink, counter, mirror", xp: 8, order: 1 },
-      { id: "toilet_tamer", branchId: "mom_bathroom_ops", name: "Toilet Tamer", flavor: "Subduing the porcelain beast", description: "Clean toilet inside and out", xp: 12, order: 2 },
-      { id: "bathroom_boss", branchId: "mom_bathroom_ops", name: "Bathroom Boss", flavor: "Total command of the loo", description: "Full half-bath reset + restock", xp: 18, order: 3 },
+      { id: "sink_shiner", branchId: "rebekah_bathroom_ops", name: "Sink Shiner", flavor: "Polishing the basin", description: "Wipe sink, counter, mirror", xp: 8, order: 1 },
+      { id: "toilet_tamer", branchId: "rebekah_bathroom_ops", name: "Toilet Tamer", flavor: "Subduing the porcelain beast", description: "Clean toilet inside and out", xp: 12, order: 2 },
+      { id: "bathroom_boss", branchId: "rebekah_bathroom_ops", name: "Bathroom Boss", flavor: "Total command of the loo", description: "Full half-bath reset + restock", xp: 18, order: 3 },
     ],
   },
   {
-    id: "mom_maintenance_planning",
+    id: "rebekah_maintenance_planning",
     name: "Maintenance Planning",
     icon: "📐",
     description: "Build the systems that keep the house alive.",
-    users: ["mom"],
+    users: ["rebekah"],
     nonSequential: true,
     skills: [
-      { id: "system_architect", branchId: "mom_maintenance_planning", name: "System Architect", flavor: "Designing the redstone contraption", description: "Design or update a household system", xp: 15, order: 1, nonSequential: true },
-      { id: "sprint_planner", branchId: "mom_maintenance_planning", name: "Sprint Planner", flavor: "Plotting the next raid", description: "Plan the week's sprints", xp: 10, order: 2, nonSequential: true },
-      { id: "rotation_reminder", branchId: "mom_maintenance_planning", name: "Rotation Reminder", flavor: "Ringing the village bell", description: "Trigger a toy rotation or reset", xp: 8, order: 3, nonSequential: true },
+      { id: "system_architect", branchId: "rebekah_maintenance_planning", name: "System Architect", flavor: "Designing the redstone contraption", description: "Design or update a household system", xp: 15, order: 1, nonSequential: true },
+      { id: "sprint_planner", branchId: "rebekah_maintenance_planning", name: "Sprint Planner", flavor: "Plotting the next raid", description: "Plan the week's sprints", xp: 10, order: 2, nonSequential: true },
+      { id: "rotation_reminder", branchId: "rebekah_maintenance_planning", name: "Rotation Reminder", flavor: "Ringing the village bell", description: "Trigger a toy rotation or reset", xp: 8, order: 3, nonSequential: true },
     ],
   },
   {
-    id: "mom_boss_levels",
+    id: "rebekah_boss_levels",
     name: "Boss Levels",
     icon: "⚔️",
     description: "Big projects, big XP.",
-    users: ["mom"],
+    users: ["rebekah"],
     nonSequential: true,
     skills: [
-      { id: "bonus_room_raid", branchId: "mom_boss_levels", name: "Bonus Room Raid", flavor: "Clearing a dungeon room", description: "Lead a 1-hour bonus room sprint", xp: 40, order: 1, nonSequential: true },
-      { id: "donation_chest_sorter", branchId: "mom_boss_levels", name: "Donation Chest Sorter", flavor: "Separating dungeon loot", description: "Re-sort the donation pile", xp: 30, order: 2, nonSequential: true },
-      { id: "deep_clean_champion", branchId: "mom_boss_levels", name: "Deep Clean Champion", flavor: "Defeating the Ender Dragon", description: "Lead a full deep clean", xp: 50, order: 3, nonSequential: true },
+      { id: "bonus_room_raid", branchId: "rebekah_boss_levels", name: "Bonus Room Raid", flavor: "Clearing a dungeon room", description: "Lead a 1-hour bonus room sprint", xp: 40, order: 1, nonSequential: true },
+      { id: "donation_chest_sorter", branchId: "rebekah_boss_levels", name: "Donation Chest Sorter", flavor: "Separating dungeon loot", description: "Re-sort the donation pile", xp: 30, order: 2, nonSequential: true },
+      { id: "deep_clean_champion", branchId: "rebekah_boss_levels", name: "Deep Clean Champion", flavor: "Defeating the Ender Dragon", description: "Lead a full deep clean", xp: 50, order: 3, nonSequential: true },
     ],
   },
 

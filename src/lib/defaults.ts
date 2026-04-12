@@ -144,7 +144,7 @@ export function buildDefaultState(): AppState {
     },
     users: {
       winter: buildWinter(),
-      mom: buildAdult("mom", "Mom", "alex"),
+      rebekah: buildAdult("rebekah", "Rebekah", "alex"),
       maarten: buildAdult("maarten", "Maarten", "steve"),
     },
     toyRotation: {
@@ -164,7 +164,7 @@ export function buildDefaultState(): AppState {
     },
     chestRewardPools: {
       winter: WINTER_CHEST_POOL,
-      mom: ADULT_CHEST_POOL,
+      rebekah: ADULT_CHEST_POOL,
       maarten: ADULT_CHEST_POOL,
     },
   };
