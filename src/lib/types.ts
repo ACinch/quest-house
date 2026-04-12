@@ -1,6 +1,11 @@
 export type UserId = "winter" | "rebekah" | "maarten";
+export type Role = "child" | "parent";
 
 export type SkillType = "standard" | "one-off" | "recurring" | "seasonal";
+
+// =====================================================================
+// Adult skill model — branch-based, sequential or non-sequential
+// =====================================================================
 
 export interface Skill {
   id: string;
@@ -37,9 +42,108 @@ export interface SkillState {
   lastCompletedAt?: string | null;
 }
 
+// =====================================================================
+// Winter skill model — web-based with prerequisites and hidden nodes
+// =====================================================================
+
+export type WinterSkillDomain =
+  | "kitchen"
+  | "bathroom_sink_zone"
+  | "bathroom_half"
+  | "bathroom_behind_door"
+  | "laundry"
+  | "floors"
+  | "surfaces"
+  | "waste"
+  | "home_maintenance"
+  | "outdoor"
+  | "life_skills"
+  | "towels"
+  | "boss"
+  | "hidden";
+
+export interface WinterSkillDef {
+  id: string;
+  name: string;
+  hiddenName: string;
+  description: string;
+  domain: WinterSkillDomain;
+  baseXP: number;
+  /** Skills that must be touched (or mastered, depending on flag) before this unlocks. */
+  prerequisites: string[];
+  /** When true, every prereq must be MASTERED, not merely touched. */
+  prerequisitesMastered?: boolean;
+  /** Generic "you must have mastered N total skills" gate (for life-skills goalposts). */
+  prerequisiteTotalMastered?: number;
+  /** Hidden converge gate: must have mastered ≥1 skill in each listed domain. */
+  prerequisiteDomainsRequired?: WinterSkillDomain[];
+  /** Boss skills always drop a chest on completion. */
+  guaranteedChest?: boolean;
+  /** True for hidden converge nodes — only appear once a prereq is touched. */
+  isHidden?: boolean;
+  /** Supervised tasks need a parent present in real life. */
+  supervised?: boolean;
+  minecraftFlavor: string;
+  minecraftIcon: string;
+}
+
+export interface WinterSkillState {
+  unlocked: boolean;
+  mastered: boolean;
+  /** True once Winter has seen this node in his UI (regular nodes always
+   *  start revealed; hidden nodes flip to true when ≥1 prereq is touched). */
+  revealed: boolean;
+  completions: number;
+  lastCompletedAt?: string | null;
+}
+
+export interface WinterSkillTreeState {
+  /** Per-skill runtime state. The static defs live in `winter-skills.ts`. */
+  skills: Record<string, WinterSkillState>;
+}
+
+// =====================================================================
+// Winter chest tier system
+// =====================================================================
+
+export type ChestTier = "stone" | "iron" | "gold" | "diamond" | "netherite";
+
+export interface ChestRewardSlip {
+  id: string;
+  text: string;
+  category: string;
+  /** Set on Winter slips so we can keep tier provenance after redemption. */
+  tier?: ChestTier;
+}
+
+/** Winter's chest pool is split by tier. Adults still use a flat list. */
+export type TieredChestPool = Record<ChestTier, ChestRewardSlip[]>;
+
+export interface InventoryItem {
+  id: string;
+  /** Human-readable reward text drawn from the pool. */
+  reward: string;
+  category: string;
+  tier: ChestTier;
+  /** ISO timestamp the chest dropped. */
+  drawnAt: string;
+  /** Why the chest dropped — boss, random, mastery, manual, etc. */
+  trigger: ChestLogEntry["trigger"];
+  /** True once Winter (or a parent on his behalf) has used the reward. */
+  redeemed: boolean;
+  redeemedAt?: string;
+  /** When set, this is a special wildcard slip ("Extra Pull from Tier of Choice"). */
+  wildcardKind?: "tier_choice";
+}
+
+// =====================================================================
+// Logs and summaries
+// =====================================================================
+
 export interface TaskLogEntry {
   id: string;
   userId: UserId;
+  /** Empty string for Winter's web-based tasks (no branch). */
   skillBranch: string;
   skillId: string;
   taskName: string;
@@ -62,6 +166,8 @@ export interface ChestLogEntry {
     | "manual";
   triggerTask?: string;
   reward?: string;
+  /** Set for Winter's tier-based pulls. */
+  tier?: ChestTier;
   date: string;
 }
 
@@ -77,10 +183,14 @@ export interface WeeklySummary {
   rankChange: string | null;
 }
 
+// =====================================================================
+// User state
+// =====================================================================
+
 export interface UserState {
   id: UserId;
   displayName: string;
-  role: "player";
+  role: Role;
   skin: string;
   lifetimeXP: number;
   /** Winter only - resets weekly. */
@@ -91,7 +201,12 @@ export interface UserState {
   milestonesEarned: number;
   rank: string;
   chestsLooted: number;
+  /** Adults: branch-based skill state. Winter: empty (uses skillTree instead). */
   skills: Record<string, Record<string, SkillState>>;
+  /** Winter only — web-based skill tree state. */
+  skillTree?: WinterSkillTreeState;
+  /** Winter only — bankable chest reward inventory. */
+  inventory?: InventoryItem[];
   rewardWishlist: WishlistItem[];
   taskLog: TaskLogEntry[];
   chestLog: ChestLogEntry[];
@@ -104,12 +219,6 @@ export interface WishlistItem {
   notes?: string;
   earned?: boolean;
   earnedAt?: string;
-}
-
-export interface ChestRewardSlip {
-  id: string;
-  text: string;
-  category: string;
 }
 
 export interface ToyBin {
@@ -160,6 +269,18 @@ export interface AppConfig {
   rotationIntervalWeeks: number;
   weekendResetLevel: 1 | 2 | 3;
   customQuests: Skill[];
+  /** Winter chest tier weights. Must sum to 100. */
+  tierDropRates: Record<ChestTier, number>;
+}
+
+/**
+ * Per-user chest pools. Winter's is tiered; adults get a flat list each.
+ * The discriminated union avoids forcing every UI to inspect both shapes.
+ */
+export interface ChestRewardPools {
+  winter: TieredChestPool;
+  rebekah: ChestRewardSlip[];
+  maarten: ChestRewardSlip[];
 }
 
 export interface AppState {
@@ -168,5 +289,5 @@ export interface AppState {
   users: Record<UserId, UserState>;
   toyRotation: ToyRotation;
   weekendReset: { lastResetDate: string | null; log: WeekendResetLogEntry[] };
-  chestRewardPools: Record<UserId, ChestRewardSlip[]>;
+  chestRewardPools: ChestRewardPools;
 }
