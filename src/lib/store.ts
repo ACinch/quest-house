@@ -452,7 +452,7 @@ export const useStore = create<QuestHouseStore>()(
           };
           // Initialize skill state for both adults
           const users = { ...s.state.users };
-          for (const uid of ["mom", "maarten"] as UserId[]) {
+          for (const uid of ["rebekah", "maarten"] as UserId[]) {
             const u = { ...users[uid] };
             const branchMap = { ...(u.skills[quest.branchId] || {}) };
             branchMap[newSkill.id] = { unlocked: true, mastered: false, completions: 0, lastCompletedAt: null };
@@ -474,7 +474,7 @@ export const useStore = create<QuestHouseStore>()(
       removeCustomQuest: (branchId, skillId) =>
         set((s) => {
           const users = { ...s.state.users };
-          for (const uid of ["mom", "maarten"] as UserId[]) {
+          for (const uid of ["rebekah", "maarten"] as UserId[]) {
             const u = { ...users[uid] };
             const branchMap = { ...(u.skills[branchId] || {}) };
             delete branchMap[skillId];

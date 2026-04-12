@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { UserId } from "@/lib/types";
 
-const ORDER: UserId[] = ["winter", "mom", "maarten"];
+const ORDER: UserId[] = ["winter", "rebekah", "maarten"];
 
 export default function ChestPoolView() {
   const pools = useStore((s) => s.state.chestRewardPools);

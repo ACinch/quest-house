@@ -1,4 +1,4 @@
-export type UserId = "winter" | "mom" | "maarten";
+export type UserId = "winter" | "rebekah" | "maarten";
 
 export type SkillType = "standard" | "one-off" | "recurring" | "seasonal";
 

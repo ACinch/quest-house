@@ -5,11 +5,11 @@ import { UserId } from "@/lib/types";
 
 const SKINS: Record<UserId, string> = {
   winter: "❄️",
-  mom: "👩‍🌾",
+  rebekah: "👩‍🌾",
   maarten: "🧔‍♂️",
 };
 
-const ORDER: UserId[] = ["winter", "mom", "maarten"];
+const ORDER: UserId[] = ["winter", "rebekah", "maarten"];
 
 export default function UserSwitcher() {
   const activeUser = useStore((s) => s.activeUser);

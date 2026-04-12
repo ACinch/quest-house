@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { useStore } from "@/lib/store";
-import { UserId } from "@/lib/types";
+import { manualSync, pushNow, useSyncStore } from "@/lib/sync";
+import { signOut, useSession } from "@/lib/auth-client";
 
 export default function SettingsView() {
   const config = useStore((s) => s.state.config);
@@ -15,6 +16,12 @@ export default function SettingsView() {
   const logWeekendReset = useStore((s) => s.logWeekendReset);
   const weekendReset = useStore((s) => s.state.weekendReset);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const syncStatus = useSyncStore((s) => s.status);
+  const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
+  const errorMessage = useSyncStore((s) => s.errorMessage);
+  const { data: sessionUser } = useSession();
+  const blobConfigured = syncStatus !== "needs-config";
 
   const handleExport = () => {
     const data = exportState();
@@ -124,6 +131,62 @@ export default function SettingsView() {
             Last reset: {new Date(weekendReset.lastResetDate).toLocaleDateString()}
           </div>
         )}
+      </section>
+
+      <section className="panel space-y-2">
+        <div className="h3">ACCOUNT</div>
+        <div className="text-sm">
+          Signed in as:{" "}
+          <span className="text-yellow-300">
+            {sessionUser ? sessionUser.username : "—"}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="block-btn ghost w-full"
+          onClick={async () => {
+            if (confirm("Sign out?")) {
+              await signOut();
+              window.location.reload();
+            }
+          }}
+        >
+          🔒 Sign Out
+        </button>
+      </section>
+
+      <section className="panel space-y-2">
+        <div className="h3">SYNC</div>
+        <div className="text-sm">
+          Status: <span className="text-diamond">{syncStatus}</span>
+          {lastSyncedAt && (
+            <span className="muted text-xs">
+              {" "}
+              · last {new Date(lastSyncedAt).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+        {errorMessage && (
+          <div className="text-sm text-redstone">{errorMessage}</div>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            className="block-btn alt"
+            onClick={() => void manualSync()}
+            disabled={!blobConfigured}
+          >
+            ↓ Pull
+          </button>
+          <button
+            type="button"
+            className="block-btn alt"
+            onClick={() => void pushNow()}
+            disabled={!blobConfigured}
+          >
+            ↑ Push
+          </button>
+        </div>
       </section>
 
       <section className="panel space-y-2">

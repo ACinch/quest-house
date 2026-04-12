@@ -56,7 +56,7 @@ export default function Dashboard() {
       userId: activeUser,
       branchId,
       skillId,
-      confirmedBy: isAdult ? "self" : "mom",
+      confirmedBy: isAdult ? "self" : "rebekah",
     });
   };
 
