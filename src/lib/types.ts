@@ -274,14 +274,12 @@ export interface AppConfig {
 }
 
 /**
- * Per-user chest pools. Winter's is tiered; adults get a flat list each.
- * The discriminated union avoids forcing every UI to inspect both shapes.
+ * Per-user chest pools. Currently flat lists for everyone — same shape as
+ * before the tier system was introduced. The new tier-weighted pool for
+ * Winter lives separately on `AppState.winterChestPool` (still in dev) and
+ * will eventually replace the `winter` entry here.
  */
-export interface ChestRewardPools {
-  winter: TieredChestPool;
-  rebekah: ChestRewardSlip[];
-  maarten: ChestRewardSlip[];
-}
+export type ChestRewardPools = Record<UserId, ChestRewardSlip[]>;
 
 export interface AppState {
   config: AppConfig;
@@ -290,4 +288,10 @@ export interface AppState {
   toyRotation: ToyRotation;
   weekendReset: { lastResetDate: string | null; log: WeekendResetLogEntry[] };
   chestRewardPools: ChestRewardPools;
+  /**
+   * Winter's tier-weighted chest pool. Optional during the migration —
+   * once the new chest drop logic ships, this becomes the source of truth
+   * for Winter and `chestRewardPools.winter` is removed.
+   */
+  winterChestPool?: TieredChestPool;
 }

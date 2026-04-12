@@ -55,7 +55,7 @@ function buildWinter(): UserState {
   return {
     id: "winter",
     displayName: "Winter",
-    role: "player",
+    role: "child",
     skin: "winter-default",
     lifetimeXP: 0,
     currentWeekXP: 0,
@@ -76,7 +76,7 @@ function buildAdult(id: UserId, displayName: string, skin: string): UserState {
   return {
     id,
     displayName,
-    role: "player",
+    role: "parent",
     skin,
     lifetimeXP: 0,
     currentWeekXP: 0,
@@ -135,6 +135,13 @@ export function buildDefaultState(): AppState {
       rotationIntervalWeeks: 3,
       weekendResetLevel: 1,
       customQuests: [],
+      tierDropRates: {
+        stone: 35,
+        iron: 30,
+        gold: 20,
+        diamond: 12,
+        netherite: 3,
+      },
     },
     adultRewardCycle: {
       currentPosition: "house",
