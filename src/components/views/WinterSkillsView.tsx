@@ -10,6 +10,7 @@ import {
   WINTER_DOMAIN_ORDER,
 } from "@/lib/data/winter-skills";
 import type { WinterSkillDef, WinterSkillState } from "@/lib/types";
+import WinterSkillMap from "./WinterSkillMap";
 
 /**
  * Winter's skill tree view. Hybrid approach per spec Q1 = option C:
@@ -55,7 +56,7 @@ export default function WinterSkillsView() {
         </button>
       </div>
 
-      {tab === "list" ? <WinterSkillList /> : <WinterSkillMapPlaceholder />}
+      {tab === "list" ? <WinterSkillList /> : <WinterSkillMap />}
     </div>
   );
 }
@@ -320,19 +321,3 @@ function PrereqChips({ def }: { def: WinterSkillDef }) {
   );
 }
 
-// ==================================================================
-// Map view placeholder
-// ==================================================================
-
-function WinterSkillMapPlaceholder() {
-  return (
-    <div className="panel space-y-2">
-      <div className="h3">🗺️ MAP VIEW</div>
-      <div className="text-sm muted">
-        The constellation map is coming next — an SVG layered graph
-        with connection lines between skills. For now, use the list
-        view to see progress and prerequisites.
-      </div>
-    </div>
-  );
-}
