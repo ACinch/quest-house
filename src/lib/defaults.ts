@@ -9,6 +9,8 @@ import {
 import { SKILL_BRANCHES, branchesForUser } from "./skills";
 import { WINTER_SKILLS } from "./data/winter-skills";
 import { DEFAULT_WINTER_CHEST_POOL } from "./data/winter-chest-pool";
+import { DEFAULT_ROTATION_ORDER } from "./data/bosses";
+import { DEFAULT_BOSS_TIER_THRESHOLDS } from "./bosses";
 
 const WEEK_START = "2026-04-12"; // Sunday
 
@@ -192,6 +194,19 @@ export function buildDefaultState(): AppState {
       maarten: ADULT_CHEST_POOL,
     },
     winterChestPool: DEFAULT_WINTER_CHEST_POOL,
+    bosses: {
+      active: null,
+      log: [],
+      rotationIndex: 0,
+      pendingDefeat: null,
+      config: {
+        enabled: true,
+        carryOverUndefeated: false,
+        selectionMode: "manual",
+        tierThresholds: DEFAULT_BOSS_TIER_THRESHOLDS,
+        rotationOrder: DEFAULT_ROTATION_ORDER,
+      },
+    },
   };
 }
 
