@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
+import { CHEST_TIER_META } from "@/lib/data/winter-chest-pool";
 
 const TRIGGER_LABELS: Record<string, string> = {
   random_drop: "Random drop!",
@@ -12,6 +14,21 @@ const TRIGGER_LABELS: Record<string, string> = {
   manual: "Bonus chest!",
 };
 
+/**
+ * Chest drop modal — fires when `pendingChest` is set on the store.
+ *
+ * Two paths depending on the user:
+ *
+ * WINTER: the chest already has a tier and reward baked in (rolled
+ * from the tiered pool in completeWinterSkill). We show the tier
+ * banner, reveal the reward text, and a single "Cool!" button that
+ * dismisses the modal. The reward is already in inventory so there's
+ * nothing to save.
+ *
+ * ADULTS: the original flat-pool flow. Pull a random slip from the
+ * adult's chest pool (physical-jar companion) or type in a custom
+ * reward, then Save to log it to the chest history.
+ */
 export default function ChestDropModal() {
   const pendingChest = useStore((s) => s.pendingChest);
   const resolvePendingChest = useStore((s) => s.resolvePendingChest);
@@ -32,6 +49,64 @@ export default function ChestDropModal() {
 
   if (!pendingChest) return null;
 
+  // Winter path: tier + reward pre-baked.
+  if (pendingChest.userId === "winter" && pendingChest.tier) {
+    const meta = CHEST_TIER_META[pendingChest.tier];
+    return (
+      <div className="modal-backdrop" role="dialog" aria-modal="true">
+        <div className="modal space-y-3">
+          <div className="text-center">
+            <div className="text-6xl chest-bounce">{meta.icon}</div>
+            <div
+              className="font-pixel text-[11px] mt-2"
+              style={{ color: meta.color }}
+            >
+              {meta.displayName.toUpperCase()} CHEST
+            </div>
+            <div className="muted text-xs mt-1">
+              {TRIGGER_LABELS[pendingChest.trigger] ?? "Loot drop!"}
+            </div>
+          </div>
+
+          <div
+            className="panel panel-tight text-center"
+            style={{
+              borderColor: meta.color,
+              background: "#2a2a3e",
+            }}
+          >
+            <div className="font-pixel text-[9px] text-yellow-200 mb-1">
+              YOU GOT
+            </div>
+            <div className="text-sm">{pendingChest.reward}</div>
+          </div>
+
+          <div className="muted text-xs text-center">
+            Added to your inventory.
+          </div>
+
+          <div className="flex gap-2">
+            <Link
+              href="/inventory"
+              className="block-btn alt flex-1 text-center"
+              onClick={() => dismissPendingChest()}
+            >
+              View Inventory
+            </Link>
+            <button
+              type="button"
+              className="block-btn gold flex-1"
+              onClick={() => dismissPendingChest()}
+            >
+              Cool!
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Adult path: flat-pool manual entry (unchanged).
   const drawRandom = () => {
     if (slips.length === 0) return;
     const slip = slips[Math.floor(Math.random() * slips.length)];
