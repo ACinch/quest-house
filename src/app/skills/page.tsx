@@ -1,10 +1,10 @@
 import AppShell from "@/components/AppShell";
-import SkillsView from "@/components/views/SkillsView";
+import SkillsRouter from "@/components/views/SkillsRouter";
 
 export default function SkillsPage() {
   return (
     <AppShell>
-      <SkillsView />
+      <SkillsRouter />
     </AppShell>
   );
 }
