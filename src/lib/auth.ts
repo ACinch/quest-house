@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { NextRequest } from "next/server";
-import type { UserId } from "./types";
+import type { Role, UserId } from "./types";
 
 /**
  * Thin server-side auth modeled after better-auth's API surface so we can
@@ -13,12 +13,19 @@ import type { UserId } from "./types";
  * - Sessions are HMAC-signed httpOnly cookies. Stateless: no session table.
  * - All auth state lives in `AUTH_SECRET` (HMAC key) and the env var
  *   credentials.
+ * - Each user has a fixed Role ("child" for Winter, "parent" for the
+ *   other two). Role is derived from userId and never stored separately.
  */
 
 export const SESSION_COOKIE = "quest_house_session";
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 
 const USER_IDS: UserId[] = ["winter", "rebekah", "maarten"];
+
+/** Fixed userId → Role mapping. Winter is the household's child. */
+export function roleFor(userId: UserId): Role {
+  return userId === "winter" ? "child" : "parent";
+}
 
 interface CredentialEntry {
   userId: UserId;

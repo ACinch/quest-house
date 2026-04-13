@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { UserId } from "./types";
+import type { Role, UserId } from "./types";
 
 /**
  * Client-side auth modeled loosely after better-auth's React API:
@@ -17,6 +17,20 @@ import type { UserId } from "./types";
 export interface SessionUser {
   id: UserId;
   username: string;
+  /** "child" for Winter, "parent" for Rebekah/Maarten. Derived server-side. */
+  role: Role;
+}
+
+/** Convenience selector — true iff the currently signed-in user is a parent. */
+export function useIsParent(): boolean {
+  const user = useSessionStore((s) => s.user);
+  return user?.role === "parent";
+}
+
+/** Convenience selector — true iff the currently signed-in user is Winter (child). */
+export function useIsChild(): boolean {
+  const user = useSessionStore((s) => s.user);
+  return user?.role === "child";
 }
 
 interface SessionStore {
