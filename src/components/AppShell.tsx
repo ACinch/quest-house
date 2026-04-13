@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import ChestDropModal from "./ChestDropModal";
+import BossDefeatCelebration from "./BossDefeatCelebration";
 import UserSwitcher from "./UserSwitcher";
 import LoginGate from "./LoginGate";
 import SyncIndicator from "./SyncIndicator";
@@ -80,6 +81,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <ChestDropModal />
+      <BossDefeatCelebration />
     </div>
     </LoginGate>
   );
