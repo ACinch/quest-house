@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRef } from "react";
 import { useStore } from "@/lib/store";
 import { manualSync, pushNow, useSyncStore } from "@/lib/sync";
-import { signOut, useSession } from "@/lib/auth-client";
+import { signOut, useIsParent, useSession } from "@/lib/auth-client";
 
 export default function SettingsView() {
   const config = useStore((s) => s.state.config);
@@ -21,6 +21,7 @@ export default function SettingsView() {
   const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
   const errorMessage = useSyncStore((s) => s.errorMessage);
   const { data: sessionUser } = useSession();
+  const isParent = useIsParent();
   const blobConfigured = syncStatus !== "needs-config";
 
   const handleExport = () => {
@@ -57,11 +58,25 @@ export default function SettingsView() {
         <div className="grid grid-cols-2 gap-2">
           <Link href="/weekly" className="block-btn ghost">📊 Weekly</Link>
           <Link href="/rotation" className="block-btn ghost">🧸 Toys</Link>
-          <Link href="/quests" className="block-btn ghost">📋 Custom Quests</Link>
-          <Link href="/chest-pool" className="block-btn ghost">🎁 Chest Pool</Link>
+          {isParent && (
+            <>
+              <Link href="/quests" className="block-btn ghost">📋 Custom Quests</Link>
+              <Link href="/chest-pool" className="block-btn ghost">🎁 Chest Pool</Link>
+            </>
+          )}
         </div>
       </section>
 
+      {!isParent && (
+        <div className="panel text-xs muted">
+          Some sections (config, weekend reset level, data management,
+          chest pool) are hidden because you&apos;re signed in as Winter.
+          Sign in as a parent to edit them.
+        </div>
+      )}
+
+      {isParent && (
+      <>
       <section className="panel space-y-2">
         <div className="h3">CONFIG</div>
         <Field
@@ -132,6 +147,8 @@ export default function SettingsView() {
           </div>
         )}
       </section>
+      </>
+      )}
 
       <section className="panel space-y-2">
         <div className="h3">ACCOUNT</div>
@@ -189,6 +206,8 @@ export default function SettingsView() {
         </div>
       </section>
 
+      {isParent && (
+      <>
       <section className="panel space-y-2">
         <div className="h3">DATA</div>
         <div className="grid grid-cols-2 gap-2">
@@ -228,6 +247,8 @@ export default function SettingsView() {
           More themes coming soon. The skill tree is theme-agnostic — only flavor text and colors will change.
         </div>
       </section>
+      </>
+      )}
     </div>
   );
 }

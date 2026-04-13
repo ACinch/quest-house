@@ -2,28 +2,45 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useStore } from "@/lib/store";
 import ChestDropModal from "./ChestDropModal";
 import UserSwitcher from "./UserSwitcher";
 import LoginGate from "./LoginGate";
 import SyncIndicator from "./SyncIndicator";
 
-const TABS = [
+interface TabDef {
+  href: string;
+  label: string;
+  icon: string;
+}
+
+const BASE_TABS: TabDef[] = [
   { href: "/", label: "Home", icon: "🏠" },
   { href: "/skills", label: "Skills", icon: "🧱" },
   { href: "/log", label: "Log", icon: "📜" },
-  { href: "/wishlist", label: "Wish", icon: "🎁" },
-  { href: "/settings", label: "More", icon: "⚙️" },
 ];
+
+const WINTER_TAB: TabDef = { href: "/inventory", label: "Loot", icon: "🎒" };
+const WISHLIST_TAB: TabDef = { href: "/wishlist", label: "Wish", icon: "🎁" };
+const SETTINGS_TAB: TabDef = { href: "/settings", label: "More", icon: "⚙️" };
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const rolloverWeekIfNeeded = useStore((s) => s.rolloverWeekIfNeeded);
+  const activeUser = useStore((s) => s.activeUser);
 
   useEffect(() => {
     rolloverWeekIfNeeded();
   }, [rolloverWeekIfNeeded]);
+
+  // The fourth tab slot changes based on the active user:
+  //   - Winter  → Inventory (🎒 Loot)
+  //   - Adults  → Wishlist
+  const tabs = useMemo<TabDef[]>(() => {
+    const fourth = activeUser === "winter" ? WINTER_TAB : WISHLIST_TAB;
+    return [...BASE_TABS, fourth, SETTINGS_TAB];
+  }, [activeUser]);
 
   return (
     <LoginGate>
@@ -50,7 +67,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       <nav className="tabbar">
-        {TABS.map((t) => {
+        {tabs.map((t) => {
           const active =
             t.href === "/" ? pathname === "/" : pathname.startsWith(t.href);
           return (
