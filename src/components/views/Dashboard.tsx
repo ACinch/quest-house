@@ -11,6 +11,7 @@ import {
 } from "@/lib/data/winter-skills";
 import XPBar from "@/components/XPBar";
 import RankBadge from "@/components/RankBadge";
+import BossCard from "./BossCard";
 
 /**
  * The dashboard adapts to the active user:
@@ -108,6 +109,8 @@ function WinterDashboard() {
           </div>
         </div>
       </section>
+
+      <BossCard />
 
       <section>
         <div className="h3 mb-2">⚡ AVAILABLE QUESTS</div>
@@ -302,6 +305,8 @@ function AdultDashboard() {
           </div>
         </div>
       </section>
+
+      <BossCard />
 
       <section>
         <div className="h3 mb-2">⚡ AVAILABLE QUESTS</div>
