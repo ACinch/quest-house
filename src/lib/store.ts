@@ -4,6 +4,10 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import {
   AppState,
+  ActiveBoss,
+  BossDefeatLogEntry,
+  BossDefeatParticipant,
+  BossTaskState,
   ChestLogEntry,
   ChestTier,
   InventoryItem,
@@ -24,6 +28,18 @@ import {
   rollWinterChest,
   pickSlipFromTier,
 } from "./data/winter-chest-pool";
+import {
+  BOSSES_BY_ID,
+  buildCapstoneTasks,
+} from "./data/bosses";
+import {
+  computeTotalHP,
+  computeDamageShares,
+  tierFromPercent,
+  bonusXPForTier,
+  weekStartForDate,
+  weekEndForStart,
+} from "./bosses";
 
 function uuid() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -156,6 +172,169 @@ export function cascadeWinterTreeState(
   return next;
 }
 
+// ==================================================================
+// Boss helpers
+// ==================================================================
+
+/**
+ * Resolve the name of a boss task for display in the task log.
+ * Walks both the built-in task defs (via BOSSES_BY_ID) and the
+ * custom task list on the active boss.
+ */
+function findBossTaskName(
+  taskId: string,
+  boss: ActiveBoss
+): string | null {
+  const custom = boss.customTasks.find((t) => t.id === taskId);
+  if (custom) return custom.name;
+
+  // Built-in tasks: look up the boss def + its capstone sources.
+  const def = BOSSES_BY_ID[boss.bossId];
+  if (!def) return null;
+  if (def.isCapstone) {
+    // Capstone task IDs are namespaced per source boss.
+    const [sourceBossId] = taskId.split(":", 1);
+    const sourceDef = BOSSES_BY_ID[sourceBossId];
+    const t = sourceDef?.tasks.find((x) => x.id === taskId);
+    return t?.name ?? null;
+  }
+  return def.tasks.find((t) => t.id === taskId)?.name ?? null;
+}
+
+/**
+ * Resolve the linkedSkillId for a boss task, walking both built-in
+ * defs and the capstone source lookup. Custom tasks never have
+ * linkedSkillId in v1.
+ */
+function findLinkedSkillId(
+  taskId: string,
+  boss: ActiveBoss
+): string | null {
+  if (taskId.startsWith("custom:")) return null;
+  const def = BOSSES_BY_ID[boss.bossId];
+  if (!def) return null;
+  if (def.isCapstone) {
+    const [sourceBossId] = taskId.split(":", 1);
+    const sourceDef = BOSSES_BY_ID[sourceBossId];
+    return sourceDef?.tasks.find((x) => x.id === taskId)?.linkedSkillId ?? null;
+  }
+  return def.tasks.find((t) => t.id === taskId)?.linkedSkillId ?? null;
+}
+
+/**
+ * Pure defeat-resolution. Takes an in-progress AppState (boss HP at
+ * 0, all tasks applied) and returns the post-resolution AppState:
+ *   - Computes per-participant damage shares + tier + bonus XP
+ *   - Credits bonus XP to each participant's weeklyBonusXP + lifetime
+ *   - Mints a chest for Winter at her tier and pushes to inventory
+ *   - Appends to bosses.log and surfaces a pendingDefeat payload
+ *   - Clears bosses.active
+ *
+ * Returns the original state untouched if there's no active boss
+ * or no bosses slice.
+ */
+function resolveBossDefeatPure(state: AppState): AppState {
+  const bosses = state.bosses;
+  if (!bosses?.active) return state;
+  const active = bosses.active;
+  const def = BOSSES_BY_ID[active.bossId];
+  if (!def) return state;
+
+  const now = nowISO();
+  const totalDamageDealt = Object.values(active.participants).reduce(
+    (sum, p) => sum + p.damageDealt,
+    0
+  );
+  const shares = computeDamageShares(active.participants, totalDamageDealt);
+  const pool = state.winterChestPool ?? DEFAULT_WINTER_CHEST_POOL;
+
+  // Build the defeat log participants list + apply rewards.
+  const users = { ...state.users };
+  const defeatParticipants: BossDefeatParticipant[] = [];
+
+  for (const share of shares) {
+    const tier = tierFromPercent(share.damagePercent, bosses.config);
+    const bonusXP = tier ? bonusXPForTier(tier, bosses.config) : 0;
+
+    // Credit the user: weeklyBonusXP + lifetime.
+    const user = { ...users[share.userId] };
+    user.weeklyBonusXP += bonusXP;
+    user.lifetimeXP += bonusXP;
+    user.rank = rankFor(user.lifetimeXP);
+
+    let chestReward: string | undefined;
+
+    // Winter-only chest mint.
+    if (share.userId === "winter" && tier) {
+      const slip = pickSlipFromTier(pool, tier);
+      if (slip) {
+        chestReward = slip.text;
+        const chest: ChestLogEntry = {
+          id: uuid(),
+          userId: "winter",
+          trigger: "boss_level",
+          triggerTask: active.bossId,
+          reward: slip.text,
+          tier,
+          date: now,
+        };
+        const item: InventoryItem = {
+          id: uuid(),
+          reward: slip.text,
+          category: slip.category,
+          tier,
+          drawnAt: now,
+          trigger: "boss_level",
+          redeemed: false,
+          wildcardKind:
+            slip.category === "Wildcard" ? "tier_choice" : undefined,
+        };
+        user.chestLog = [chest, ...user.chestLog];
+        user.inventory = [...(user.inventory ?? []), item];
+        user.chestsLooted += 1;
+      }
+    }
+
+    users[share.userId] = user;
+
+    defeatParticipants.push({
+      userId: share.userId,
+      tasksCompleted: active.participants[share.userId]?.tasksCompleted ?? 0,
+      damageDealt: share.damageDealt,
+      damagePercent: share.damagePercent,
+      chestTier: tier,
+      bonusXP,
+      chestReward,
+    });
+  }
+
+  const logEntry: BossDefeatLogEntry = {
+    id: active.instanceId,
+    bossId: active.bossId,
+    bossName: def.name,
+    weekStartDate: active.weekStartDate,
+    defeated: true,
+    finalHP: 0,
+    totalDamageDealt,
+    participants: defeatParticipants,
+    defeatedAt: now,
+  };
+
+  return {
+    ...state,
+    users,
+    bosses: {
+      ...bosses,
+      active: null,
+      log: [logEntry, ...bosses.log],
+      pendingDefeat: logEntry,
+    },
+  };
+}
+
+// Re-export so Phase F (zone-skill side effect) can import it.
+export { resolveBossDefeatPure };
+
 interface ChestDropPayload {
   userId: UserId;
   trigger: ChestLogEntry["trigger"];
@@ -247,6 +426,52 @@ export interface QuestHouseStore {
   addChestSlip: (userId: UserId, text: string, category?: string) => void;
   removeChestSlip: (userId: UserId, id: string) => void;
   updateChestSlip: (userId: UserId, id: string, text: string, category?: string) => void;
+
+  // ================================================================
+  // Weekly Boss actions
+  // ================================================================
+
+  /**
+   * Start a new boss instance in "spawning" status. All tasks start
+   * active. For capstones (Ender Dragon), flatten all room bosses'
+   * tasks into the task map. Clears any stale spawning boss first.
+   * Parent-only (UI-enforced).
+   */
+  selectBoss: (bossId: string) => void;
+
+  /** Toggle a task's `active` flag during the spawning phase. */
+  toggleBossTask: (taskId: string) => void;
+
+  /** Append a custom one-off task to the spawning boss. */
+  addCustomBossTask: (task: { name: string; damage: number; xp: number }) => void;
+
+  /** Remove a custom task (cannot remove built-in tasks). */
+  removeCustomBossTask: (taskId: string) => void;
+
+  /** Lock the task list and transition from "spawning" → "active". */
+  spawnBoss: () => void;
+
+  /** Reset (clear) any active boss. Parent escape hatch. */
+  resetActiveBoss: () => void;
+
+  /**
+   * Mark a boss task as completed. Applies damage, awards task XP to
+   * `creditedUserId`, tracks participant stats, and auto-resolves
+   * the boss if HP reaches 0. For tasks with a `linkedSkillId`
+   * credited to Winter, also progresses that skill (no extra XP,
+   * no random chest — the task XP covers it).
+   */
+  completeBossTask: (params: {
+    taskId: string;
+    creditedUserId: UserId;
+    confirmedBy: UserId;
+  }) => void;
+
+  /**
+   * Dismiss the defeat celebration overlay. Called when the user
+   * acknowledges their rewards.
+   */
+  acknowledgeBossDefeat: () => void;
 }
 
 export const useStore = create<QuestHouseStore>()(
@@ -923,6 +1148,346 @@ export const useStore = create<QuestHouseStore>()(
             },
           },
         })),
+
+      // ============================================================
+      // Weekly Boss actions
+      // ============================================================
+
+      selectBoss: (bossId) =>
+        set((s) => {
+          const def = BOSSES_BY_ID[bossId];
+          if (!def || !s.state.bosses) return s;
+
+          const now = nowISO();
+          const weekStart = weekStartForDate();
+          const weekEnd = weekEndForStart(weekStart);
+
+          // Assemble task list — flatten capstones at spawn time.
+          const sourceTasks = def.isCapstone ? buildCapstoneTasks() : def.tasks;
+          const taskStates: Record<string, BossTaskState> = {};
+          for (const t of sourceTasks) {
+            taskStates[t.id] = {
+              taskId: t.id,
+              active: true,
+              completed: false,
+              damage: t.damage,
+              xp: t.xp,
+            };
+          }
+          const totalHP = Object.values(taskStates).reduce(
+            (sum, t) => sum + t.damage,
+            0
+          );
+
+          const active: ActiveBoss = {
+            instanceId: uuid(),
+            bossId,
+            weekStartDate: weekStart,
+            weekEndDate: weekEnd,
+            totalHP,
+            currentHP: totalHP,
+            tasks: taskStates,
+            customTasks: [],
+            participants: {},
+            spawnedAt: now,
+            status: "spawning",
+          };
+
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...s.state.bosses,
+                active,
+                pendingDefeat: null,
+              },
+            },
+          };
+        }),
+
+      toggleBossTask: (taskId) =>
+        set((s) => {
+          const bosses = s.state.bosses;
+          if (!bosses?.active) return s;
+          if (bosses.active.status !== "spawning") return s;
+          const existing = bosses.active.tasks[taskId];
+          if (!existing) return s;
+          const nextTasks = {
+            ...bosses.active.tasks,
+            [taskId]: { ...existing, active: !existing.active },
+          };
+          const total =
+            Object.values(nextTasks).reduce(
+              (sum, t) => sum + (t.active ? t.damage : 0),
+              0
+            ) +
+            bosses.active.customTasks.reduce((sum, t) => sum + t.damage, 0);
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...bosses,
+                active: {
+                  ...bosses.active,
+                  tasks: nextTasks,
+                  totalHP: total,
+                  currentHP: total,
+                },
+              },
+            },
+          };
+        }),
+
+      addCustomBossTask: ({ name, damage, xp }) =>
+        set((s) => {
+          const bosses = s.state.bosses;
+          if (!bosses?.active) return s;
+          if (bosses.active.status !== "spawning") return s;
+          if (!name.trim() || damage <= 0) return s;
+          const id = `custom:${uuid()}`;
+          const nextCustoms = [
+            ...bosses.active.customTasks,
+            { id, name: name.trim(), damage, xp },
+          ];
+          const nextTasks = {
+            ...bosses.active.tasks,
+            [id]: {
+              taskId: id,
+              active: true,
+              completed: false,
+              damage,
+              xp,
+            },
+          };
+          const total = computeTotalHP({
+            ...bosses.active,
+            tasks: nextTasks,
+            customTasks: nextCustoms,
+          });
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...bosses,
+                active: {
+                  ...bosses.active,
+                  tasks: nextTasks,
+                  customTasks: nextCustoms,
+                  totalHP: total,
+                  currentHP: total,
+                },
+              },
+            },
+          };
+        }),
+
+      removeCustomBossTask: (taskId) =>
+        set((s) => {
+          const bosses = s.state.bosses;
+          if (!bosses?.active) return s;
+          if (bosses.active.status !== "spawning") return s;
+          if (!taskId.startsWith("custom:")) return s;
+          const nextCustoms = bosses.active.customTasks.filter(
+            (t) => t.id !== taskId
+          );
+          const nextTasks = { ...bosses.active.tasks };
+          delete nextTasks[taskId];
+          const total = computeTotalHP({
+            ...bosses.active,
+            tasks: nextTasks,
+            customTasks: nextCustoms,
+          });
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...bosses,
+                active: {
+                  ...bosses.active,
+                  tasks: nextTasks,
+                  customTasks: nextCustoms,
+                  totalHP: total,
+                  currentHP: total,
+                },
+              },
+            },
+          };
+        }),
+
+      spawnBoss: () =>
+        set((s) => {
+          const bosses = s.state.bosses;
+          if (!bosses?.active) return s;
+          if (bosses.active.status !== "spawning") return s;
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...bosses,
+                active: {
+                  ...bosses.active,
+                  status: "active",
+                  spawnedAt: nowISO(),
+                },
+              },
+            },
+          };
+        }),
+
+      resetActiveBoss: () =>
+        set((s) => {
+          if (!s.state.bosses) return s;
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...s.state.bosses,
+                active: null,
+                pendingDefeat: null,
+              },
+            },
+          };
+        }),
+
+      completeBossTask: ({ taskId, creditedUserId, confirmedBy }) =>
+        set((s) => {
+          const bosses = s.state.bosses;
+          if (!bosses?.active) return s;
+          if (bosses.active.status !== "active") return s;
+          const task = bosses.active.tasks[taskId];
+          if (!task || !task.active || task.completed) return s;
+
+          // 1. Close the task and apply damage.
+          const now = nowISO();
+          const nextTask: BossTaskState = {
+            ...task,
+            completed: true,
+            creditedUserId,
+            confirmedBy,
+            completedAt: now,
+          };
+          const nextTasks = { ...bosses.active.tasks, [taskId]: nextTask };
+          const nextHP = Math.max(0, bosses.active.currentHP - task.damage);
+
+          // 2. Bookkeeping on the credited participant.
+          const existingParticipant =
+            bosses.active.participants[creditedUserId] ?? {
+              userId: creditedUserId,
+              tasksCompleted: 0,
+              damageDealt: 0,
+            };
+          const nextParticipants = {
+            ...bosses.active.participants,
+            [creditedUserId]: {
+              ...existingParticipant,
+              tasksCompleted: existingParticipant.tasksCompleted + 1,
+              damageDealt: existingParticipant.damageDealt + task.damage,
+            },
+          };
+
+          // 3. Award task XP to the credited user (regular XP, not bonus).
+          //    Mirrors the inline XP logic in completeTask/completeWinterSkill.
+          const users = { ...s.state.users };
+          const credited = { ...users[creditedUserId] };
+          credited.lifetimeXP += task.xp;
+          if (creditedUserId === "winter") {
+            credited.currentWeekXP += task.xp;
+          } else {
+            credited.currentMilestoneXP += task.xp;
+            if (credited.currentMilestoneXP >= s.state.config.adultMilestoneThreshold) {
+              credited.milestonesEarned += 1;
+              credited.currentMilestoneXP -=
+                s.state.config.adultMilestoneThreshold;
+            }
+          }
+          credited.rank = rankFor(credited.lifetimeXP);
+
+          // 4. Task log entry.
+          const taskDef = BOSSES_BY_ID[bosses.active.bossId];
+          const logEntry: TaskLogEntry = {
+            id: uuid(),
+            userId: creditedUserId,
+            skillBranch: `boss:${bosses.active.bossId}`,
+            skillId: taskId,
+            taskName: task.taskId
+              ? // Look up the task def for the display name — fall back to
+                // the task id if the def can't be found (shouldn't happen).
+                findBossTaskName(taskId, bosses.active) ?? taskId
+              : taskId,
+            xpEarned: task.xp,
+            completedAt: now,
+            confirmedBy,
+            chestTriggered: false,
+          };
+          credited.taskLog = [logEntry, ...credited.taskLog];
+
+          // 5. Linked skill progression (Winter only). Directly bump
+          //    the completion count + cascade. No extra XP or chest.
+          if (
+            creditedUserId === "winter" &&
+            credited.skillTree
+          ) {
+            const linkedId = findLinkedSkillId(taskId, bosses.active);
+            if (linkedId && credited.skillTree.skills[linkedId]) {
+              const tree = { ...credited.skillTree.skills };
+              const cur = tree[linkedId];
+              const nextCompletions = cur.completions + 1;
+              const justMastered =
+                !cur.mastered &&
+                nextCompletions >= s.state.config.masteryThreshold;
+              tree[linkedId] = {
+                ...cur,
+                completions: nextCompletions,
+                mastered: cur.mastered || justMastered,
+                lastCompletedAt: now,
+              };
+              credited.skillTree = {
+                skills: cascadeWinterTreeState(tree),
+              };
+            }
+          }
+
+          users[creditedUserId] = credited;
+
+          // 6. Apply the mutation and check for defeat.
+          const nextBosses = {
+            ...bosses,
+            active: {
+              ...bosses.active,
+              tasks: nextTasks,
+              currentHP: nextHP,
+              participants: nextParticipants,
+            },
+          };
+
+          const midState: AppState = {
+            ...s.state,
+            users,
+            bosses: nextBosses,
+          };
+
+          if (nextHP <= 0) {
+            return { state: resolveBossDefeatPure(midState) };
+          }
+
+          // Touch taskDef just to keep TS happy about the unused var.
+          void taskDef;
+          return { state: midState };
+        }),
+
+      acknowledgeBossDefeat: () =>
+        set((s) => {
+          if (!s.state.bosses) return s;
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...s.state.bosses,
+                pendingDefeat: null,
+              },
+            },
+          };
+        }),
     }),
     {
       name: "quest-house-state-v1",
