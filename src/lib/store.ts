@@ -33,6 +33,10 @@ import {
   buildCapstoneTasks,
 } from "./data/bosses";
 import {
+  WINTER_SKILL_BOSS_DAMAGE,
+  ADULT_SKILL_BOSS_DAMAGE,
+} from "./data/boss-damage-map";
+import {
   computeTotalHP,
   computeDamageShares,
   tierFromPercent,
@@ -334,6 +338,87 @@ function resolveBossDefeatPure(state: AppState): AppState {
 
 // Re-export so Phase F (zone-skill side effect) can import it.
 export { resolveBossDefeatPure };
+
+/**
+ * Zone-skill side effect: when a user completes a skill, check if
+ * there's an active boss whose zone matches the skill's mapped zone
+ * (or if the mapping is "any"). If so, deal damage to the boss,
+ * credit the user as a participant, and auto-resolve if HP drops
+ * to 0.
+ *
+ * Returns a new AppState. No-op and returns `state` unchanged if:
+ *   - No active boss, or status !== "active"
+ *   - Skill has no entry in the damage map
+ *   - Skill's zone is specific and doesn't match the boss's zone
+ *     (special case: whole_house capstones accept any skill)
+ *
+ * Called from completeWinterSkill and the adult completeTask action
+ * right before the final set(). The task XP has already been awarded
+ * at the call site — this helper only deals damage.
+ */
+export function applySkillBossDamage(
+  state: AppState,
+  userId: UserId,
+  skillId: string,
+  adultBranchId?: string
+): AppState {
+  const bosses = state.bosses;
+  if (!bosses?.active || bosses.active.status !== "active") return state;
+
+  // Look up the damage entry.
+  let entry = null as { zone: string; damage: number } | null;
+  if (userId === "winter") {
+    entry = WINTER_SKILL_BOSS_DAMAGE[skillId] ?? null;
+  } else if (adultBranchId) {
+    entry = ADULT_SKILL_BOSS_DAMAGE[`${adultBranchId}:${skillId}`] ?? null;
+  }
+  if (!entry) return state;
+
+  // Zone gate.
+  const active = bosses.active;
+  const bossDef = BOSSES_BY_ID[active.bossId];
+  if (!bossDef) return state;
+  const bossZone = bossDef.zone;
+  const skillZone = entry.zone;
+  const zoneMatch =
+    skillZone === "any" ||
+    skillZone === bossZone ||
+    bossZone === "whole_house"; // capstone accepts every zone
+  if (!zoneMatch) return state;
+
+  // Apply damage + bump participant.
+  const nextHP = Math.max(0, active.currentHP - entry.damage);
+  const existing = active.participants[userId] ?? {
+    userId,
+    tasksCompleted: 0,
+    damageDealt: 0,
+  };
+  const nextParticipants = {
+    ...active.participants,
+    [userId]: {
+      ...existing,
+      // NOT incrementing tasksCompleted — the skill completion is a
+      // skill-tree event, not a boss task. Only damage counts.
+      damageDealt: existing.damageDealt + entry.damage,
+    },
+  };
+
+  const nextActive: ActiveBoss = {
+    ...active,
+    currentHP: nextHP,
+    participants: nextParticipants,
+  };
+
+  const nextState: AppState = {
+    ...state,
+    bosses: { ...bosses, active: nextActive },
+  };
+
+  if (nextHP <= 0) {
+    return resolveBossDefeatPure(nextState);
+  }
+  return nextState;
+}
 
 interface ChestDropPayload {
   userId: UserId;
@@ -644,8 +729,19 @@ export const useStore = create<QuestHouseStore>()(
         }
 
         const nextUsers = { ...s.users, [userId]: user };
+
+        // Boss zone-skill side effect — only adults here, Winter uses
+        // completeWinterSkill. Adult skill ids are keyed by branch.
+        const intermediate: AppState = { ...s, users: nextUsers };
+        const afterBossDamage = applySkillBossDamage(
+          intermediate,
+          userId,
+          skill.id,
+          branchId
+        );
+
         set({
-          state: { ...s, users: nextUsers },
+          state: afterBossDamage,
           pendingChest: chest,
         });
 
@@ -771,8 +867,21 @@ export const useStore = create<QuestHouseStore>()(
         // prompting for manual entry.
         const firstChest = newChests[0] ?? null;
 
+        // Boss zone-skill side effect — may convert into a defeat
+        // resolution if HP reaches 0. Build the intermediate state
+        // first, then apply the damage, then use the result.
+        const intermediate: AppState = {
+          ...s,
+          users: { ...s.users, winter: user },
+        };
+        const afterBossDamage = applySkillBossDamage(
+          intermediate,
+          "winter",
+          skillId
+        );
+
         set({
-          state: { ...s, users: { ...s.users, winter: user } },
+          state: afterBossDamage,
           pendingChest: firstChest,
         });
 
