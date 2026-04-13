@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import {
   AppState,
   ActiveBoss,
+  BossConfig,
   BossDefeatLogEntry,
   BossDefeatParticipant,
   BossTaskState,
@@ -538,6 +539,9 @@ export interface QuestHouseStore {
 
   /** Reset (clear) any active boss. Parent escape hatch. */
   resetActiveBoss: () => void;
+
+  /** Patch the BossConfig (selectionMode, carryOverUndefeated, etc.). */
+  updateBossConfig: (patch: Partial<BossConfig>) => void;
 
   /**
    * Mark a boss task as completed. Applies damage, awards task XP to
@@ -1571,6 +1575,20 @@ export const useStore = create<QuestHouseStore>()(
                 ...s.state.bosses,
                 active: null,
                 pendingDefeat: null,
+              },
+            },
+          };
+        }),
+
+      updateBossConfig: (patch) =>
+        set((s) => {
+          if (!s.state.bosses) return s;
+          return {
+            state: {
+              ...s.state,
+              bosses: {
+                ...s.state.bosses,
+                config: { ...s.state.bosses.config, ...patch },
               },
             },
           };

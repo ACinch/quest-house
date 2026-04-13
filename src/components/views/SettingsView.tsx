@@ -147,6 +147,8 @@ export default function SettingsView() {
           </div>
         )}
       </section>
+
+      <BossSettingsSection />
       </>
       )}
 
@@ -275,5 +277,94 @@ function Field({
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
       />
     </label>
+  );
+}
+
+// ==================================================================
+// Boss settings (parent-only, nested inside the parent-only fragment)
+// ==================================================================
+
+function BossSettingsSection() {
+  const bosses = useStore((s) => s.state.bosses);
+  const updateBossConfig = useStore((s) => s.updateBossConfig);
+  const resetActiveBoss = useStore((s) => s.resetActiveBoss);
+
+  if (!bosses) return null;
+  const { config, active, log } = bosses;
+
+  return (
+    <section className="panel space-y-2">
+      <div className="h3">⚔️ BOSSES</div>
+
+      <div className="text-sm">
+        Status:{" "}
+        <span className="text-yellow-300">
+          {active
+            ? `${active.status} — ${active.bossId}`
+            : "none"}
+        </span>
+      </div>
+      <div className="text-xs muted">
+        {log.length} boss{log.length === 1 ? "" : "es"} in the defeat log
+      </div>
+
+      <label className="block text-sm">
+        Selection mode
+        <select
+          className="input mt-1"
+          value={config.selectionMode}
+          onChange={(e) =>
+            updateBossConfig({
+              selectionMode: e.target.value as "manual" | "rotate",
+            })
+          }
+        >
+          <option value="manual">Manual — pick each week</option>
+          <option value="rotate">Rotate — auto-cycle through rooms</option>
+        </select>
+      </label>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={config.carryOverUndefeated}
+          onChange={(e) =>
+            updateBossConfig({ carryOverUndefeated: e.target.checked })
+          }
+        />
+        Carry over undefeated bosses to next week
+      </label>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={config.enabled}
+          onChange={(e) => updateBossConfig({ enabled: e.target.checked })}
+        />
+        Enable the weekly boss feature
+      </label>
+
+      <div className="text-xs muted">
+        Rotation order (for rotate mode): {config.rotationOrder.join(" → ")}
+      </div>
+
+      {active && (
+        <button
+          type="button"
+          className="block-btn danger w-full"
+          onClick={() => {
+            if (
+              confirm(
+                "Reset the active boss? All progress lost, no rewards."
+              )
+            ) {
+              resetActiveBoss();
+            }
+          }}
+        >
+          ⚠️ Reset Active Boss
+        </button>
+      )}
+    </section>
   );
 }
