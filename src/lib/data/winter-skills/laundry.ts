@@ -1,0 +1,111 @@
+import type { WinterSkillDef } from "@/lib/types";
+
+/**
+ * Laundry domain — 9 skills.
+ *
+ * Foundation skills (unlocked at start): l_hang_clothes, l_fold_clothes.
+ * The full pipeline cascades: hang/fold → start load → washer→dryer →
+ * lint trap. Stain treatment branches off start_load. Bed linen
+ * (strip → make) branches off folding.
+ */
+export const LAUNDRY_SKILLS: WinterSkillDef[] = [
+  {
+    id: "l_hang_clothes",
+    name: "Hang Clothes",
+    hiddenName: "Unknown Skill",
+    description: "Hang clothes properly on hangers",
+    domain: "laundry",
+    baseXP: 5,
+    prerequisites: [],
+    minecraftFlavor: "Placing armor on stands",
+    minecraftIcon: "armor_stand",
+  },
+  {
+    id: "l_fold_clothes",
+    name: "Fold Clothes",
+    hiddenName: "Unknown Skill",
+    description: "Fold laundry neatly",
+    domain: "laundry",
+    baseXP: 5,
+    prerequisites: [],
+    minecraftFlavor: "Stacking items neatly",
+    minecraftIcon: "chest",
+  },
+  {
+    id: "l_start_load",
+    name: "Start a Load",
+    hiddenName: "Unknown Skill",
+    description: "Start a load of laundry in the washing machine",
+    domain: "laundry",
+    baseXP: 8,
+    prerequisites: ["l_fold_clothes"],
+    minecraftFlavor: "Running the ore washer",
+    minecraftIcon: "dispenser",
+  },
+  {
+    id: "l_washer_to_dryer",
+    name: "Move Washer to Dryer",
+    hiddenName: "Unknown Skill",
+    description: "Transfer laundry from washer to dryer",
+    domain: "laundry",
+    baseXP: 5,
+    prerequisites: ["l_start_load"],
+    minecraftFlavor: "Moving smelted items to storage",
+    minecraftIcon: "hopper",
+  },
+  {
+    id: "l_put_away",
+    name: "Put Away Laundry",
+    hiddenName: "Unknown Skill",
+    description: "Put folded/hung laundry in correct drawers/closets",
+    domain: "laundry",
+    baseXP: 8,
+    prerequisites: ["l_fold_clothes", "l_hang_clothes"],
+    minecraftFlavor: "Organizing the vault",
+    minecraftIcon: "barrel",
+  },
+  {
+    id: "l_lint_trap",
+    name: "Clean Lint Trap",
+    hiddenName: "Unknown Skill",
+    description: "Clean the dryer lint trap",
+    domain: "laundry",
+    baseXP: 3,
+    prerequisites: ["l_washer_to_dryer"],
+    minecraftFlavor: "Clearing the filter",
+    minecraftIcon: "cobweb",
+  },
+  {
+    id: "l_treat_stain",
+    name: "Treat a Stain",
+    hiddenName: "Unknown Skill",
+    description: "Identify and treat a stain before washing",
+    domain: "laundry",
+    baseXP: 10,
+    prerequisites: ["l_start_load", "k_clean_sink"],
+    minecraftFlavor: "Applying the potion of cleansing",
+    minecraftIcon: "potion",
+  },
+  {
+    id: "l_strip_bed",
+    name: "Strip Bed Sheets",
+    hiddenName: "Unknown Skill",
+    description: "Remove sheets and pillowcases from bed",
+    domain: "laundry",
+    baseXP: 5,
+    prerequisites: ["l_fold_clothes"],
+    minecraftFlavor: "Dismantling the bed",
+    minecraftIcon: "bed",
+  },
+  {
+    id: "l_make_bed",
+    name: "Make Bed with Clean Sheets",
+    hiddenName: "Unknown Skill",
+    description: "Put clean sheets on and make the bed",
+    domain: "laundry",
+    baseXP: 10,
+    prerequisites: ["l_strip_bed", "l_fold_clothes"],
+    minecraftFlavor: "Crafting the perfect bed",
+    minecraftIcon: "bed",
+  },
+];
