@@ -42,7 +42,7 @@ import {
   tierFromPercent,
   bonusXPForTier,
   weekStartForDate,
-  weekEndForStart,
+  weekEndForStart as getWeekEndForStart,
 } from "./bosses";
 
 function uuid() {
@@ -621,7 +621,125 @@ export const useStore = create<QuestHouseStore>()(
             changed = true;
           }
         }
-        if (changed) set({ state: { ...s, users } });
+
+        // Boss state transitions on rollover:
+        //   - "spawning" bosses from a prior week → silently dropped
+        //     (the user never hit Spawn, boss never lived)
+        //   - "active" bosses from a prior week:
+        //       * config.carryOverUndefeated === true → slide window
+        //         to the new week, keep HP + tasks + participants
+        //       * else → convert to an "expired" BossDefeatLogEntry
+        //         (defeated: false, no rewards) and clear active
+        //   - Auto-select in "rotate" mode if bosses.active is null
+        //     after the above, creating a fresh "spawning" boss from
+        //     the next rotation slot. Does NOT auto-spawn — user
+        //     still customizes tasks and confirms.
+        let bosses = s.bosses;
+        if (bosses) {
+          const active = bosses.active;
+          if (active && active.weekStartDate !== currentWeek) {
+            if (active.status === "spawning") {
+              // Silent drop — never existed as a real fight.
+              bosses = { ...bosses, active: null };
+              changed = true;
+            } else if (active.status === "active") {
+              if (bosses.config.carryOverUndefeated) {
+                // Slide window forward. HP / tasks / participants
+                // carry over intact. Update week dates only.
+                const newEnd = getWeekEndForStart(currentWeek);
+                bosses = {
+                  ...bosses,
+                  active: {
+                    ...active,
+                    weekStartDate: currentWeek,
+                    weekEndDate: newEnd,
+                  },
+                };
+                changed = true;
+              } else {
+                // Expire — log as failed attempt, no rewards.
+                const def = BOSSES_BY_ID[active.bossId];
+                const totalDamageDealt = Object.values(active.participants)
+                  .reduce((sum, p) => sum + p.damageDealt, 0);
+                const expiredEntry: BossDefeatLogEntry = {
+                  id: active.instanceId,
+                  bossId: active.bossId,
+                  bossName: def?.name ?? active.bossId,
+                  weekStartDate: active.weekStartDate,
+                  defeated: false,
+                  finalHP: active.currentHP,
+                  totalDamageDealt,
+                  participants: Object.values(active.participants).map((p) => ({
+                    userId: p.userId,
+                    tasksCompleted: p.tasksCompleted,
+                    damageDealt: p.damageDealt,
+                    damagePercent: 0,
+                    chestTier: null,
+                    bonusXP: 0,
+                  })),
+                  defeatedAt: nowISO(),
+                };
+                bosses = {
+                  ...bosses,
+                  active: null,
+                  log: [expiredEntry, ...bosses.log],
+                };
+                changed = true;
+              }
+            }
+          }
+
+          // Rotate auto-select after the above cleanup.
+          if (!bosses.active && bosses.config.selectionMode === "rotate") {
+            const order = bosses.config.rotationOrder;
+            if (order.length > 0) {
+              const idx = bosses.rotationIndex % order.length;
+              const nextBossId = order[idx];
+              const def = BOSSES_BY_ID[nextBossId];
+              if (def) {
+                const weekStart = currentWeek;
+                const weekEnd = getWeekEndForStart(currentWeek);
+                const sourceTasks = def.isCapstone
+                  ? buildCapstoneTasks()
+                  : def.tasks;
+                const taskStates: Record<string, BossTaskState> = {};
+                for (const t of sourceTasks) {
+                  taskStates[t.id] = {
+                    taskId: t.id,
+                    active: true,
+                    completed: false,
+                    damage: t.damage,
+                    xp: t.xp,
+                  };
+                }
+                const totalHP = Object.values(taskStates).reduce(
+                  (sum, t) => sum + t.damage,
+                  0
+                );
+                bosses = {
+                  ...bosses,
+                  active: {
+                    instanceId: uuid(),
+                    bossId: nextBossId,
+                    weekStartDate: weekStart,
+                    weekEndDate: weekEnd,
+                    totalHP,
+                    currentHP: totalHP,
+                    tasks: taskStates,
+                    customTasks: [],
+                    participants: {},
+                    spawnedAt: nowISO(),
+                    status: "spawning",
+                  },
+                  rotationIndex: (idx + 1) % order.length,
+                };
+                changed = true;
+              }
+            }
+          }
+        }
+
+        if (changed) set({ state: { ...s, users, bosses } });
       },
 
       completeTask: ({ userId, branchId, skillId, confirmedBy = "self", notes }) => {
@@ -1269,7 +1387,7 @@ export const useStore = create<QuestHouseStore>()(
 
           const now = nowISO();
           const weekStart = weekStartForDate();
-          const weekEnd = weekEndForStart(weekStart);
+          const weekEnd = getWeekEndForStart(weekStart);
 
           // Assemble task list — flatten capstones at spawn time.
           const sourceTasks = def.isCapstone ? buildCapstoneTasks() : def.tasks;
