@@ -278,14 +278,22 @@ export const useStore = create<QuestHouseStore>()(
           const u = users[id];
           if (u.weekStartDate !== currentWeek) {
             // Archive last week's summary if there was activity
-            if (u.currentWeekXP > 0 && id === "winter") {
+            if ((u.currentWeekXP > 0 || u.weeklyBonusXP > 0) && id === "winter") {
               u.weeklySummaries = [
                 ...u.weeklySummaries,
                 {
                   weekStartDate: u.weekStartDate,
                   weekEndDate: currentWeek,
                   xpEarned: u.currentWeekXP,
-                  dollarsEarned: dollarsFor(u.currentWeekXP, s.config.xpToDollarRate),
+                  bonusXPEarned: u.weeklyBonusXP,
+                  dollarsEarned: dollarsFor(
+                    Math.min(u.currentWeekXP, s.config.weeklyXPCap),
+                    s.config.xpToDollarRate
+                  ),
+                  bonusDollarsEarned: dollarsFor(
+                    u.weeklyBonusXP,
+                    s.config.xpToDollarRate
+                  ),
                   tasksCompleted: 0,
                   chestsLooted: 0,
                   skillsProgressed: [],
@@ -298,6 +306,7 @@ export const useStore = create<QuestHouseStore>()(
               ...u,
               weekStartDate: currentWeek,
               currentWeekXP: 0,
+              weeklyBonusXP: 0,
             };
             changed = true;
           }

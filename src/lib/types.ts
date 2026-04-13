@@ -175,7 +175,11 @@ export interface WeeklySummary {
   weekStartDate: string;
   weekEndDate: string;
   xpEarned: number;
+  /** Bonus XP earned from boss defeats this week. */
+  bonusXPEarned: number;
   dollarsEarned: number;
+  /** Dollar value of bonus XP (Winter only). */
+  bonusDollarsEarned: number;
   tasksCompleted: number;
   chestsLooted: number;
   skillsProgressed: string[];
@@ -195,6 +199,12 @@ export interface UserState {
   lifetimeXP: number;
   /** Winter only - resets weekly. */
   currentWeekXP: number;
+  /**
+   * Bonus XP earned from boss defeats this week. Tracked separately
+   * so Winter's dollar calc can bypass the weekly cap for bonus
+   * earnings. Resets weekly alongside currentWeekXP.
+   */
+  weeklyBonusXP: number;
   weekStartDate: string;
   /** Adults only - rolling toward milestone. */
   currentMilestoneXP: number;
@@ -294,4 +304,145 @@ export interface AppState {
    * for Winter and `chestRewardPools.winter` is removed.
    */
   winterChestPool?: TieredChestPool;
+  /** Weekly boss system state. Optional for back-compat with pre-boss data. */
+  bosses?: BossesSlice;
+}
+
+// =====================================================================
+// Weekly boss system
+// =====================================================================
+
+export type BossZone =
+  | "kitchen"
+  | "living_room"
+  | "bathroom_half"
+  | "dining_room"
+  | "bonus_room"
+  | "whole_house";
+
+/** Static definition for a boss (lives in data files, not persisted). */
+export interface BossDef {
+  id: string;
+  name: string;
+  mob: string;
+  icon: string;
+  flavor: string;
+  zone: BossZone;
+  tasks: BossTaskDef[];
+  /** Capstone bosses (Ender Dragon) flatten all other bosses' tasks at spawn. */
+  isCapstone?: boolean;
+}
+
+export interface BossTaskDef {
+  id: string;
+  name: string;
+  /** Difficulty-calibrated damage dealt to the boss when completed. */
+  damage: number;
+  /**
+   * XP awarded to the credited user on completion. Independent of damage
+   * per spec. Defaults to `damage` in seed data.
+   */
+  xp: number;
+  /** Optional link to a Winter skill tree node. Fires skill progression. */
+  linkedSkillId?: string;
+  /** Used by capstone flattening so task IDs stay unique and traceable. */
+  sourceBossId?: string;
+}
+
+/** Per-instance runtime state for one task in an active boss. */
+export interface BossTaskState {
+  taskId: string;
+  active: boolean;
+  completed: boolean;
+  creditedUserId?: UserId;
+  confirmedBy?: UserId;
+  completedAt?: string;
+  damage: number;
+  xp: number;
+}
+
+export interface BossParticipant {
+  userId: UserId;
+  tasksCompleted: number;
+  damageDealt: number;
+}
+
+export interface CustomBossTask {
+  id: string;
+  name: string;
+  damage: number;
+  xp: number;
+}
+
+export type ActiveBossStatus =
+  | "spawning"
+  | "active"
+  | "defeated"
+  | "expired";
+
+export interface ActiveBoss {
+  instanceId: string;
+  bossId: string;
+  weekStartDate: string;
+  weekEndDate: string;
+  totalHP: number;
+  currentHP: number;
+  /** Keyed by taskId (including capstone-namespaced ids). */
+  tasks: Record<string, BossTaskState>;
+  customTasks: CustomBossTask[];
+  /** Keyed by userId. Lazy-initialized on first task completion. */
+  participants: Record<string, BossParticipant>;
+  spawnedAt: string;
+  status: ActiveBossStatus;
+  defeatedAt?: string;
+}
+
+export interface BossDefeatParticipant {
+  userId: UserId;
+  tasksCompleted: number;
+  damageDealt: number;
+  damagePercent: number;
+  /** null for adults (no chest on defeat). */
+  chestTier: ChestTier | null;
+  bonusXP: number;
+  /** Slip drawn from the chest pool, Winter only. */
+  chestReward?: string;
+}
+
+export interface BossDefeatLogEntry {
+  id: string;
+  bossId: string;
+  bossName: string;
+  weekStartDate: string;
+  /** false = boss expired at week end without being killed. */
+  defeated: boolean;
+  finalHP: number;
+  totalDamageDealt: number;
+  participants: BossDefeatParticipant[];
+  defeatedAt: string;
+}
+
+export interface BossTierThreshold {
+  /** Lower bound, inclusive. */
+  minPct: number;
+  /** Upper bound, exclusive. Netherite uses 101 to cover 100% exactly. */
+  maxPctExclusive: number;
+  bonusXP: number;
+}
+
+export interface BossConfig {
+  enabled: boolean;
+  carryOverUndefeated: boolean;
+  selectionMode: "manual" | "rotate";
+  tierThresholds: Record<ChestTier, BossTierThreshold>;
+  rotationOrder: string[];
+}
+
+export interface BossesSlice {
+  active: ActiveBoss | null;
+  log: BossDefeatLogEntry[];
+  rotationIndex: number;
+  config: BossConfig;
+  /** Celebration payload for the defeat overlay. Cleared on dismiss. */
+  pendingDefeat: BossDefeatLogEntry | null;
 }
