@@ -5,12 +5,25 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import {
   AppState,
   ChestLogEntry,
+  ChestTier,
+  InventoryItem,
   Skill,
   TaskLogEntry,
   UserId,
+  WinterSkillDef,
+  WinterSkillState,
 } from "./types";
 import { buildDefaultState } from "./defaults";
 import { SKILL_BRANCHES, branchesForUserWithCustom, findSkillWithCustom, isBossBranch, rankFor } from "./skills";
+import {
+  WINTER_SKILLS,
+  WINTER_SKILLS_BY_ID,
+} from "./data/winter-skills";
+import {
+  DEFAULT_WINTER_CHEST_POOL,
+  rollWinterChest,
+  pickSlipFromTier,
+} from "./data/winter-chest-pool";
 
 function uuid() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -34,6 +47,113 @@ function getISOWeekStart(d: Date = new Date()): string {
 
 function dollarsFor(xp: number, rate: number) {
   return Math.round(xp * rate * 100) / 100;
+}
+
+// ==================================================================
+// Winter skill tree helpers (pure functions, exported for tests)
+// ==================================================================
+
+/**
+ * Returns true if a Winter skill's prerequisites are all satisfied.
+ * Three gating rules combine:
+ *   1. `prerequisites` — every listed skill must be touched (or
+ *      mastered, if prerequisitesMastered is true).
+ *   2. `prerequisiteTotalMastered` — at least N total skills
+ *      mastered anywhere in the tree.
+ *   3. `prerequisiteDomainsRequired` — at least 1 mastered skill
+ *      in each listed core domain (breadth gate).
+ */
+export function canUnlockWinterSkill(
+  def: WinterSkillDef,
+  tree: Record<string, WinterSkillState>
+): boolean {
+  // Direct prereqs
+  for (const prereqId of def.prerequisites) {
+    const st = tree[prereqId];
+    if (!st) return false;
+    if (def.prerequisitesMastered) {
+      if (!st.mastered) return false;
+    } else {
+      if (st.completions < 1) return false;
+    }
+  }
+  // Total-mastered gate
+  if (def.prerequisiteTotalMastered) {
+    const total = Object.values(tree).filter((s) => s.mastered).length;
+    if (total < def.prerequisiteTotalMastered) return false;
+  }
+  // Domain breadth gate
+  if (def.prerequisiteDomainsRequired) {
+    for (const domain of def.prerequisiteDomainsRequired) {
+      const has = WINTER_SKILLS.some(
+        (s) => s.domain === domain && tree[s.id]?.mastered
+      );
+      if (!has) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Whether a hidden convergence node should be revealed to Winter.
+ * Per spec Q3 = option B: reveal when ≥1 prerequisite has been
+ * touched (any completions > 0). For prereq-less hidden nodes that
+ * gate on domains/totals, reveal as soon as any skill in a required
+ * domain is touched (or any skill if the gate is total-mastered).
+ */
+export function shouldRevealHidden(
+  def: WinterSkillDef,
+  tree: Record<string, WinterSkillState>
+): boolean {
+  if (!def.isHidden) return true;
+
+  if (def.prerequisites.length > 0) {
+    return def.prerequisites.some(
+      (p) => (tree[p]?.completions ?? 0) > 0
+    );
+  }
+  if (def.prerequisiteDomainsRequired) {
+    return def.prerequisiteDomainsRequired.some((domain) =>
+      WINTER_SKILLS.some(
+        (s) => s.domain === domain && (tree[s.id]?.completions ?? 0) > 0
+      )
+    );
+  }
+  if (def.prerequisiteTotalMastered) {
+    return Object.values(tree).some((s) => s.completions > 0);
+  }
+  return true;
+}
+
+/**
+ * Cascade unlock + reveal. Walks the whole tree after a change and
+ * flips unlocked/revealed flags for any skills whose gates are now
+ * satisfied. Repeats until a pass makes no changes (handles chains
+ * where unlocking A also unlocks B whose gate depended on A).
+ */
+export function cascadeWinterTreeState(
+  tree: Record<string, WinterSkillState>
+): Record<string, WinterSkillState> {
+  const next = { ...tree };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const def of WINTER_SKILLS) {
+      const st = next[def.id];
+      if (!st) continue;
+
+      if (!st.unlocked && canUnlockWinterSkill(def, next)) {
+        next[def.id] = { ...st, unlocked: true, revealed: true };
+        changed = true;
+        continue;
+      }
+      if (def.isHidden && !st.revealed && shouldRevealHidden(def, next)) {
+        next[def.id] = { ...st, revealed: true };
+        changed = true;
+      }
+    }
+  }
+  return next;
 }
 
 interface ChestDropPayload {
@@ -66,6 +186,37 @@ export interface QuestHouseStore {
     confirmedBy?: UserId | "self";
     notes?: string;
   }) => { xpAwarded: number; chest: ChestLogEntry | null; mastered: boolean };
+
+  /**
+   * Complete a Winter skill tree node. Unlike completeTask (adults),
+   * this awards XP, cascades unlocks through the full web, reveals
+   * hidden convergence nodes as their prereqs are touched, rolls
+   * tier-weighted chests, and pushes drawn rewards into Winter's
+   * inventory.
+   *
+   * Per spec Q2 = option B (parent-driven), only a parent should
+   * ever dispatch this. The UI guards against Winter calling it; the
+   * store doesn't enforce server-side role here (there's no server).
+   */
+  completeWinterSkill: (params: {
+    skillId: string;
+    confirmedBy: UserId;
+    notes?: string;
+  }) => {
+    xpAwarded: number;
+    mastered: boolean;
+    chests: ChestLogEntry[];
+    inventoryItems: InventoryItem[];
+  };
+
+  /** Redeem a Winter inventory item. Wildcards go to resolveWildcard. */
+  redeemInventoryItem: (itemId: string) => void;
+
+  /** Resolve a "tier of choice" wildcard by picking a tier. */
+  resolveWildcardSlip: (itemId: string, chosenTier: ChestTier) => void;
+
+  /** Parent-grant: manually add a bonus inventory item to Winter. */
+  parentGrantWinterChest: (tier: ChestTier, note?: string) => void;
 
   /** Manually drop a chest */
   triggerChest: (p: ChestDropPayload) => ChestLogEntry;
@@ -266,6 +417,242 @@ export const useStore = create<QuestHouseStore>()(
 
         return { xpAwarded: xp, chest, mastered };
       },
+
+      completeWinterSkill: ({ skillId, confirmedBy, notes }) => {
+        const s = get().state;
+        const def = WINTER_SKILLS_BY_ID[skillId];
+        if (!def) {
+          return { xpAwarded: 0, mastered: false, chests: [], inventoryItems: [] };
+        }
+
+        const user = { ...s.users.winter };
+        if (!user.skillTree) {
+          return { xpAwarded: 0, mastered: false, chests: [], inventoryItems: [] };
+        }
+
+        const tree = { ...user.skillTree.skills };
+        const current = tree[skillId];
+        if (!current || !current.unlocked) {
+          return { xpAwarded: 0, mastered: false, chests: [], inventoryItems: [] };
+        }
+
+        // Increment completion and check mastery.
+        const nextState: WinterSkillState = {
+          ...current,
+          completions: current.completions + 1,
+          lastCompletedAt: nowISO(),
+        };
+        let justMastered = false;
+        if (!nextState.mastered && nextState.completions >= s.config.masteryThreshold) {
+          nextState.mastered = true;
+          justMastered = true;
+        }
+        tree[skillId] = nextState;
+
+        // Cascade unlock + reveal across the whole tree.
+        const cascaded = cascadeWinterTreeState(tree);
+        user.skillTree = { skills: cascaded };
+
+        // XP awarding.
+        const xp = def.baseXP;
+        user.lifetimeXP += xp;
+        user.currentWeekXP += xp;
+        const oldRank = user.rank;
+        user.rank = rankFor(user.lifetimeXP);
+        const rankUp = oldRank !== user.rank;
+
+        // Task log entry. Winter's domain goes into skillBranch for
+        // compatibility with the existing log filter UI.
+        const taskEntry: TaskLogEntry = {
+          id: uuid(),
+          userId: "winter",
+          skillBranch: def.domain,
+          skillId: def.id,
+          taskName: def.description,
+          xpEarned: xp,
+          completedAt: nowISO(),
+          confirmedBy,
+          chestTriggered: false,
+          notes,
+        };
+
+        // Chest triggers (Winter only — adults don't get tiered chests).
+        const triggers: ChestLogEntry["trigger"][] = [];
+        if (def.guaranteedChest) triggers.push("boss_level");
+        if (justMastered) triggers.push("mastery");
+        if (rankUp) triggers.push("rank_up");
+        if (
+          user.currentWeekXP >= s.config.weeklyXPCap &&
+          user.currentWeekXP - xp < s.config.weeklyXPCap
+        ) {
+          triggers.push("weekly_cap");
+        }
+        if (Math.random() < s.config.chestDropChance) {
+          triggers.push("random_drop");
+        }
+
+        // Roll one chest per trigger, mint inventory items + chest log.
+        const pool = s.winterChestPool ?? DEFAULT_WINTER_CHEST_POOL;
+        const newChests: ChestLogEntry[] = [];
+        const newInventoryItems: InventoryItem[] = [];
+        for (const trigger of triggers) {
+          const roll = rollWinterChest(pool, s.config.tierDropRates);
+          if (!roll) continue;
+          const chest: ChestLogEntry = {
+            id: uuid(),
+            userId: "winter",
+            trigger,
+            triggerTask: def.id,
+            reward: roll.slip.text,
+            tier: roll.tier,
+            date: nowISO(),
+          };
+          newChests.push(chest);
+          const invItem: InventoryItem = {
+            id: uuid(),
+            reward: roll.slip.text,
+            category: roll.slip.category,
+            tier: roll.tier,
+            drawnAt: nowISO(),
+            trigger,
+            redeemed: false,
+            wildcardKind:
+              roll.slip.category === "Wildcard" ? "tier_choice" : undefined,
+          };
+          newInventoryItems.push(invItem);
+        }
+
+        if (newChests.length > 0) {
+          taskEntry.chestTriggered = true;
+          user.chestsLooted += newChests.length;
+          user.chestLog = [...newChests, ...user.chestLog];
+          user.inventory = [...(user.inventory || []), ...newInventoryItems];
+        }
+        user.taskLog = [taskEntry, ...user.taskLog];
+
+        // The existing ChestDropModal listens to `pendingChest`. For
+        // Winter we still surface the first chest here so the modal
+        // fires — but because the reward is already baked into the
+        // inventory, the UI branches on tier/reward rather than
+        // prompting for manual entry.
+        const firstChest = newChests[0] ?? null;
+
+        set({
+          state: { ...s, users: { ...s.users, winter: user } },
+          pendingChest: firstChest,
+        });
+
+        return {
+          xpAwarded: xp,
+          mastered: justMastered,
+          chests: newChests,
+          inventoryItems: newInventoryItems,
+        };
+      },
+
+      redeemInventoryItem: (itemId) =>
+        set((s) => {
+          const user = { ...s.state.users.winter };
+          const inventory = user.inventory ?? [];
+          const item = inventory.find((i) => i.id === itemId);
+          if (!item || item.redeemed) return s;
+          // Wildcards go through resolveWildcardSlip instead — redeeming
+          // a wildcard directly is a no-op (the UI should steer users
+          // toward the tier picker).
+          if (item.wildcardKind === "tier_choice") return s;
+
+          const nextInventory = inventory.map((i) =>
+            i.id === itemId ? { ...i, redeemed: true, redeemedAt: nowISO() } : i
+          );
+          user.inventory = nextInventory;
+          return {
+            state: { ...s.state, users: { ...s.state.users, winter: user } },
+          };
+        }),
+
+      resolveWildcardSlip: (itemId, chosenTier) =>
+        set((s) => {
+          const user = { ...s.state.users.winter };
+          const inventory = user.inventory ?? [];
+          const item = inventory.find((i) => i.id === itemId);
+          if (!item || item.redeemed) return s;
+          if (item.wildcardKind !== "tier_choice") return s;
+
+          const pool = s.state.winterChestPool ?? DEFAULT_WINTER_CHEST_POOL;
+          const slip = pickSlipFromTier(pool, chosenTier);
+          if (!slip) return s;
+
+          // Mark the wildcard as redeemed and mint a fresh inventory item.
+          const resolvedInventory = inventory.map((i) =>
+            i.id === itemId ? { ...i, redeemed: true, redeemedAt: nowISO() } : i
+          );
+          const newItem: InventoryItem = {
+            id: uuid(),
+            reward: slip.text,
+            category: slip.category,
+            tier: chosenTier,
+            drawnAt: nowISO(),
+            trigger: "manual",
+            redeemed: false,
+          };
+          user.inventory = [...resolvedInventory, newItem];
+
+          // Log the resolution as a chest log entry so it shows up in
+          // the history.
+          const chestEntry: ChestLogEntry = {
+            id: uuid(),
+            userId: "winter",
+            trigger: "manual",
+            triggerTask: "wildcard_resolution",
+            reward: slip.text,
+            tier: chosenTier,
+            date: nowISO(),
+          };
+          user.chestLog = [chestEntry, ...user.chestLog];
+          user.chestsLooted += 1;
+
+          return {
+            state: { ...s.state, users: { ...s.state.users, winter: user } },
+          };
+        }),
+
+      parentGrantWinterChest: (tier, note) =>
+        set((s) => {
+          const pool = s.state.winterChestPool ?? DEFAULT_WINTER_CHEST_POOL;
+          const slip = pickSlipFromTier(pool, tier);
+          if (!slip) return s;
+
+          const user = { ...s.state.users.winter };
+          const item: InventoryItem = {
+            id: uuid(),
+            reward: slip.text,
+            category: slip.category,
+            tier,
+            drawnAt: nowISO(),
+            trigger: "manual",
+            redeemed: false,
+            wildcardKind:
+              slip.category === "Wildcard" ? "tier_choice" : undefined,
+          };
+          user.inventory = [...(user.inventory || []), item];
+
+          const chestEntry: ChestLogEntry = {
+            id: uuid(),
+            userId: "winter",
+            trigger: "manual",
+            triggerTask: note || "parent_grant",
+            reward: slip.text,
+            tier,
+            date: nowISO(),
+          };
+          user.chestLog = [chestEntry, ...user.chestLog];
+          user.chestsLooted += 1;
+
+          return {
+            state: { ...s.state, users: { ...s.state.users, winter: user } },
+            pendingChest: chestEntry,
+          };
+        }),
 
       triggerChest: ({ userId, trigger, triggerTask }) => {
         const s = get().state;
