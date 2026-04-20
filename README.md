@@ -1,5 +1,7 @@
 # Quest House — Neurospicy Household Reset
 
+<!-- Deploy touch: trigger Vercel rebuild after initial merge to main -->
+
 A Minecraft-themed chore + reward web app for a neurodivergent family of three.
 Built with **Next.js 16**, **TypeScript**, **Tailwind CSS**, **Zustand**, and
 **Vercel Blob** for cross-device sync. Per-user login with credentials from
