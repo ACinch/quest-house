@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { UserId } from "@/lib/types";
@@ -99,6 +101,8 @@ export default function ChestPoolView() {
           🎁 Drop a Chest
         </button>
       </section>
+      <BackButton />
+
     </div>
   );
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { useIsParent } from "@/lib/auth-client";
@@ -317,6 +319,8 @@ function PrereqChips({ def }: { def: WinterSkillDef }) {
           {chip.label}
         </span>
       ))}
+      <BackButton />
+
     </div>
   );
 }

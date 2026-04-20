@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { useIsParent } from "@/lib/auth-client";
@@ -329,6 +331,8 @@ function WildcardPickerModal({
           Cancel
         </button>
       </div>
+      <BackButton />
+
     </div>
   );
 }

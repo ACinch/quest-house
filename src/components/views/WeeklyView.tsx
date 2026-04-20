@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import { useStore } from "@/lib/store";
 
 export default function WeeklyView() {
@@ -129,6 +131,8 @@ export default function WeeklyView() {
           </div>
         </div>
       )}
+      <BackButton />
+
     </div>
   );
 }

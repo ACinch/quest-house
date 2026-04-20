@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
+import BackButton from "@/components/BackButton";
 import { useIsParent, useSession } from "@/lib/auth-client";
 import { BOSSES_BY_ID } from "@/lib/data/bosses";
 import {
@@ -82,7 +83,7 @@ export default function BossFightView() {
             <>Ask a parent to start one.</>
           )}
         </div>
-        <Link href="/" className="block-btn ghost w-full">← Dashboard</Link>
+        <BackButton />
       </div>
     );
   }
@@ -246,9 +247,7 @@ export default function BossFightView() {
         </button>
       )}
 
-      <Link href="/" className="block-btn ghost w-full">
-        ← Dashboard
-      </Link>
+      <BackButton />
 
       {/* Killing-blow confirmation */}
       {pendingKill && (

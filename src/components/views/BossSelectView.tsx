@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
@@ -92,9 +94,7 @@ export default function BossSelectView() {
         })}
       </div>
 
-      <Link href="/" className="block-btn ghost w-full">
-        ← Cancel
-      </Link>
+      <BackButton label="← Cancel" />
     </div>
   );
 }

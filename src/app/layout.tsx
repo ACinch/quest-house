@@ -7,7 +7,7 @@ import "./globals.css";
  * push so `view-source` / inspector shows which commit the live
  * deploy was built from. Not rendered visibly anywhere on the page.
  */
-const BUILD_COMMIT = "f4de2f1";
+const BUILD_COMMIT = "27135d9";
 
 export const metadata: Metadata = {
   title: "Quest House — Neurospicy Household Reset",

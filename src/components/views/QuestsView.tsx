@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { SkillType } from "@/lib/types";
@@ -106,6 +108,8 @@ export default function QuestsView() {
           ))
         )}
       </section>
+      <BackButton />
+
     </div>
   );
 }

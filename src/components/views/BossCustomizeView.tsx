@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -263,9 +265,7 @@ export default function BossCustomizeView() {
         ⚔️ Spawn the Boss ({active.totalHP} HP)
       </button>
 
-      <Link href="/" className="block-btn ghost w-full">
-        ← Save & Exit
-      </Link>
+      <BackButton label="← Save & Exit" />
     </div>
   );
 }

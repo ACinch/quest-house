@@ -1,5 +1,7 @@
 "use client";
 
+import BackButton from "@/components/BackButton";
+
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 
@@ -191,6 +193,8 @@ export default function WishlistView() {
           </div>
         </section>
       )}
+      <BackButton />
+
     </div>
   );
 }
