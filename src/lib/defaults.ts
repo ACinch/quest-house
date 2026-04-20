@@ -4,12 +4,25 @@ import {
   SkillState,
   UserId,
   UserState,
+  WinterSkillState,
 } from "./types";
 import { SKILL_BRANCHES, branchesForUser } from "./skills";
+import { WINTER_SKILLS } from "./data/winter-skills";
+import { DEFAULT_WINTER_CHEST_POOL } from "./data/winter-chest-pool";
+import { DEFAULT_ROTATION_ORDER } from "./data/bosses";
+import { DEFAULT_BOSS_TIER_THRESHOLDS } from "./bosses";
 
 const WEEK_START = "2026-04-12"; // Sunday
 
-function buildSkills(userId: UserId): Record<string, Record<string, SkillState>> {
+/**
+ * Adults still use the branch-based skill model (SkillBranch[] from
+ * skills.ts). Winter has moved to the web-based model (WinterSkillDef[]
+ * in data/winter-skills/). This helper builds the adult branch state;
+ * Winter uses buildWinterSkillTree() below.
+ */
+function buildSkills(
+  userId: UserId
+): Record<string, Record<string, SkillState>> {
   const out: Record<string, Record<string, SkillState>> = {};
   for (const branch of branchesForUser(userId)) {
     out[branch.id] = {};
@@ -26,45 +39,56 @@ function buildSkills(userId: UserId): Record<string, Record<string, SkillState>>
   return out;
 }
 
+/**
+ * Build Winter's initial web-based skill tree state.
+ *
+ * Rules (per spec):
+ *   - ALL skills start at 0 completions, including skills Winter has
+ *     already mastered in real life (spec Q from prior wave).
+ *   - Skills with no prerequisites unlock immediately (foundation
+ *     skills). This is the only way Winter can start playing.
+ *   - Hidden convergence nodes (isHidden: true) start NOT revealed.
+ *     They flip to revealed when ≥1 prereq has been touched (store
+ *     handles this at completeTask time).
+ *   - All other locked skills start revealed: true — Winter sees
+ *     them in the UI as mystery nodes (name shown as hiddenName
+ *     until unlocked).
+ */
+function buildWinterSkillTree(): Record<string, WinterSkillState> {
+  const out: Record<string, WinterSkillState> = {};
+  for (const def of WINTER_SKILLS) {
+    const foundation = def.prerequisites.length === 0 && !def.isHidden
+      && !def.prerequisiteTotalMastered
+      && !def.prerequisiteDomainsRequired;
+    out[def.id] = {
+      unlocked: foundation,
+      mastered: false,
+      revealed: !def.isHidden,
+      completions: 0,
+      lastCompletedAt: null,
+    };
+  }
+  return out;
+}
+
 function buildWinter(): UserState {
-  const skills = buildSkills("winter");
-  // Pre-mastered skills per spec
-  const preMastered: [string, string][] = [
-    ["kitchen_arts", "chest_sorter"],
-    ["waste_management", "minecart_runner"],
-    ["laundry_mastery", "armor_sorter"],
-    ["laundry_mastery", "armor_display"],
-    ["laundry_mastery", "inventory_stacker"],
-  ];
-  for (const [b, s] of preMastered) {
-    if (skills[b]?.[s]) {
-      skills[b][s] = { unlocked: true, mastered: true, completions: 10, lastCompletedAt: null };
-    }
-  }
-  // Unlock the next sequential skill after each mastered one
-  for (const branch of branchesForUser("winter")) {
-    if (branch.nonSequential) continue;
-    const sorted = [...branch.skills].sort((a, b) => a.order - b.order);
-    for (let i = 0; i < sorted.length; i++) {
-      const cur = skills[branch.id][sorted[i].id];
-      if (cur.mastered && sorted[i + 1]) {
-        skills[branch.id][sorted[i + 1].id].unlocked = true;
-      }
-    }
-  }
   return {
     id: "winter",
     displayName: "Winter",
-    role: "player",
+    role: "child",
     skin: "winter-default",
     lifetimeXP: 0,
     currentWeekXP: 0,
+    weeklyBonusXP: 0,
     weekStartDate: WEEK_START,
     currentMilestoneXP: 0,
     milestonesEarned: 0,
     rank: "Noob",
     chestsLooted: 0,
-    skills,
+    // Winter doesn't use the adult branch-based model — this stays empty.
+    skills: {},
+    skillTree: { skills: buildWinterSkillTree() },
+    inventory: [],
     rewardWishlist: [],
     taskLog: [],
     chestLog: [],
@@ -76,10 +100,11 @@ function buildAdult(id: UserId, displayName: string, skin: string): UserState {
   return {
     id,
     displayName,
-    role: "player",
+    role: "parent",
     skin,
     lifetimeXP: 0,
     currentWeekXP: 0,
+    weeklyBonusXP: 0,
     weekStartDate: WEEK_START,
     currentMilestoneXP: 0,
     milestonesEarned: 0,
@@ -93,20 +118,14 @@ function buildAdult(id: UserId, displayName: string, skin: string): UserState {
   };
 }
 
-const WINTER_CHEST_POOL: ChestRewardSlip[] = [
-  { id: "w1", text: "Bonus $1 on Greenlight card", category: "Money" },
-  { id: "w2", text: "Bonus $2 on Greenlight card", category: "Money" },
-  { id: "w3", text: "Bonus $3 on Greenlight card", category: "Money" },
-  { id: "w4", text: "30 extra minutes of screen time", category: "Time" },
-  { id: "w5", text: "Stay up 30 min past bedtime", category: "Time" },
-  { id: "w6", text: "Pick what's for dinner tonight", category: "Choice" },
-  { id: "w7", text: "Pick the family movie/show", category: "Choice" },
-  { id: "w8", text: "Skip one chore (bankable)", category: "Power-up" },
-  { id: "w9", text: "Small treat from the store (under $5)", category: "Treat" },
-  { id: "w10", text: "Bonus dessert", category: "Treat" },
-  { id: "w11", text: "Pick a new app theme/skin", category: "Meta" },
-  { id: "w12", text: "Wildcard — pick any reward", category: "Wildcard" },
-];
+/**
+ * Legacy flat pool for Winter — kept only so existing consumers of
+ * chestRewardPools.winter compile. The new tier-aware chest drop logic
+ * reads from AppState.winterChestPool instead. Once the Phase 4 store
+ * update ships, this can be removed and chestRewardPools typed to
+ * adults only.
+ */
+const LEGACY_WINTER_CHEST_POOL: ChestRewardSlip[] = [];
 
 const ADULT_CHEST_POOL: ChestRewardSlip[] = [
   { id: "a1", text: "Bonus 25 XP toward next milestone", category: "Progress" },
@@ -135,6 +154,13 @@ export function buildDefaultState(): AppState {
       rotationIntervalWeeks: 3,
       weekendResetLevel: 1,
       customQuests: [],
+      tierDropRates: {
+        stone: 35,
+        iron: 30,
+        gold: 20,
+        diamond: 12,
+        netherite: 3,
+      },
     },
     adultRewardCycle: {
       currentPosition: "house",
@@ -163,9 +189,23 @@ export function buildDefaultState(): AppState {
       log: [],
     },
     chestRewardPools: {
-      winter: WINTER_CHEST_POOL,
+      winter: LEGACY_WINTER_CHEST_POOL,
       rebekah: ADULT_CHEST_POOL,
       maarten: ADULT_CHEST_POOL,
+    },
+    winterChestPool: DEFAULT_WINTER_CHEST_POOL,
+    bosses: {
+      active: null,
+      log: [],
+      rotationIndex: 0,
+      pendingDefeat: null,
+      config: {
+        enabled: true,
+        carryOverUndefeated: false,
+        selectionMode: "manual",
+        tierThresholds: DEFAULT_BOSS_TIER_THRESHOLDS,
+        rotationOrder: DEFAULT_ROTATION_ORDER,
+      },
     },
   };
 }

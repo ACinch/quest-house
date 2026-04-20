@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   buildSessionCookie,
   getCredentialsConfigured,
+  roleFor,
   signSession,
   verifyCredentials,
 } from "@/lib/auth";
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
   }
 
   const res = NextResponse.json({
-    user: { id: userId, username },
+    user: { id: userId, username, role: roleFor(userId) },
   });
   res.headers.set("Set-Cookie", buildSessionCookie(token));
   return res;

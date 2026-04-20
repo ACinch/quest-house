@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRef } from "react";
 import { useStore } from "@/lib/store";
 import { manualSync, pushNow, useSyncStore } from "@/lib/sync";
-import { signOut, useSession } from "@/lib/auth-client";
+import { signOut, useIsParent, useSession } from "@/lib/auth-client";
 
 export default function SettingsView() {
   const config = useStore((s) => s.state.config);
@@ -21,6 +21,7 @@ export default function SettingsView() {
   const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
   const errorMessage = useSyncStore((s) => s.errorMessage);
   const { data: sessionUser } = useSession();
+  const isParent = useIsParent();
   const blobConfigured = syncStatus !== "needs-config";
 
   const handleExport = () => {
@@ -57,11 +58,25 @@ export default function SettingsView() {
         <div className="grid grid-cols-2 gap-2">
           <Link href="/weekly" className="block-btn ghost">📊 Weekly</Link>
           <Link href="/rotation" className="block-btn ghost">🧸 Toys</Link>
-          <Link href="/quests" className="block-btn ghost">📋 Custom Quests</Link>
-          <Link href="/chest-pool" className="block-btn ghost">🎁 Chest Pool</Link>
+          {isParent && (
+            <>
+              <Link href="/quests" className="block-btn ghost">📋 Custom Quests</Link>
+              <Link href="/chest-pool" className="block-btn ghost">🎁 Chest Pool</Link>
+            </>
+          )}
         </div>
       </section>
 
+      {!isParent && (
+        <div className="panel text-xs muted">
+          Some sections (config, weekend reset level, data management,
+          chest pool) are hidden because you&apos;re signed in as Winter.
+          Sign in as a parent to edit them.
+        </div>
+      )}
+
+      {isParent && (
+      <>
       <section className="panel space-y-2">
         <div className="h3">CONFIG</div>
         <Field
@@ -133,6 +148,10 @@ export default function SettingsView() {
         )}
       </section>
 
+      <BossSettingsSection />
+      </>
+      )}
+
       <section className="panel space-y-2">
         <div className="h3">ACCOUNT</div>
         <div className="text-sm">
@@ -189,6 +208,8 @@ export default function SettingsView() {
         </div>
       </section>
 
+      {isParent && (
+      <>
       <section className="panel space-y-2">
         <div className="h3">DATA</div>
         <div className="grid grid-cols-2 gap-2">
@@ -228,6 +249,8 @@ export default function SettingsView() {
           More themes coming soon. The skill tree is theme-agnostic — only flavor text and colors will change.
         </div>
       </section>
+      </>
+      )}
     </div>
   );
 }
@@ -254,5 +277,94 @@ function Field({
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
       />
     </label>
+  );
+}
+
+// ==================================================================
+// Boss settings (parent-only, nested inside the parent-only fragment)
+// ==================================================================
+
+function BossSettingsSection() {
+  const bosses = useStore((s) => s.state.bosses);
+  const updateBossConfig = useStore((s) => s.updateBossConfig);
+  const resetActiveBoss = useStore((s) => s.resetActiveBoss);
+
+  if (!bosses) return null;
+  const { config, active, log } = bosses;
+
+  return (
+    <section className="panel space-y-2">
+      <div className="h3">⚔️ BOSSES</div>
+
+      <div className="text-sm">
+        Status:{" "}
+        <span className="text-yellow-300">
+          {active
+            ? `${active.status} — ${active.bossId}`
+            : "none"}
+        </span>
+      </div>
+      <div className="text-xs muted">
+        {log.length} boss{log.length === 1 ? "" : "es"} in the defeat log
+      </div>
+
+      <label className="block text-sm">
+        Selection mode
+        <select
+          className="input mt-1"
+          value={config.selectionMode}
+          onChange={(e) =>
+            updateBossConfig({
+              selectionMode: e.target.value as "manual" | "rotate",
+            })
+          }
+        >
+          <option value="manual">Manual — pick each week</option>
+          <option value="rotate">Rotate — auto-cycle through rooms</option>
+        </select>
+      </label>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={config.carryOverUndefeated}
+          onChange={(e) =>
+            updateBossConfig({ carryOverUndefeated: e.target.checked })
+          }
+        />
+        Carry over undefeated bosses to next week
+      </label>
+
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={config.enabled}
+          onChange={(e) => updateBossConfig({ enabled: e.target.checked })}
+        />
+        Enable the weekly boss feature
+      </label>
+
+      <div className="text-xs muted">
+        Rotation order (for rotate mode): {config.rotationOrder.join(" → ")}
+      </div>
+
+      {active && (
+        <button
+          type="button"
+          className="block-btn danger w-full"
+          onClick={() => {
+            if (
+              confirm(
+                "Reset the active boss? All progress lost, no rewards."
+              )
+            ) {
+              resetActiveBoss();
+            }
+          }}
+        >
+          ⚠️ Reset Active Boss
+        </button>
+      )}
+    </section>
   );
 }

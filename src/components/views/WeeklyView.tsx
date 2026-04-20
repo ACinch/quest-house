@@ -24,12 +24,12 @@ export default function WeeklyView() {
 
       <div className="panel space-y-2">
         <div className="flex justify-between">
-          <span>XP this week</span>
+          <span>XP this week (regular)</span>
           <span className="font-pixel text-[10px] text-yellow-300">{xpThisWeek}</span>
         </div>
         {!isAdult && (
           <div className="flex justify-between">
-            <span>Dollars earned</span>
+            <span>Dollars (regular)</span>
             <span className="font-pixel text-[10px] text-yellow-300">
               ${(Math.min(xpThisWeek, config.weeklyXPCap) * config.xpToDollarRate).toFixed(2)}
               {xpThisWeek > config.weeklyXPCap && (
@@ -38,6 +38,35 @@ export default function WeeklyView() {
             </span>
           </div>
         )}
+
+        {/* Boss bonus XP — always tracked, never cap-gated for Winter */}
+        <div className="flex justify-between">
+          <span>⚔️ Boss bonus XP</span>
+          <span className="font-pixel text-[10px] text-diamond">
+            {user.weeklyBonusXP}
+          </span>
+        </div>
+        {!isAdult && user.weeklyBonusXP > 0 && (
+          <div className="flex justify-between">
+            <span>Dollars (bonus)</span>
+            <span className="font-pixel text-[10px] text-diamond">
+              +${(user.weeklyBonusXP * config.xpToDollarRate).toFixed(2)}
+            </span>
+          </div>
+        )}
+
+        {!isAdult && (
+          <div className="flex justify-between border-t border-[#4a4a6a] pt-1 mt-1">
+            <span className="font-pixel text-[9px]">TOTAL $</span>
+            <span className="font-pixel text-[10px] text-yellow-300">
+              ${(
+                Math.min(xpThisWeek, config.weeklyXPCap) * config.xpToDollarRate +
+                user.weeklyBonusXP * config.xpToDollarRate
+              ).toFixed(2)}
+            </span>
+          </div>
+        )}
+
         {isAdult && (
           <div className="flex justify-between">
             <span>Milestone progress</span>
@@ -86,7 +115,14 @@ export default function WeeklyView() {
                     {w.weekStartDate} → {w.weekEndDate}
                   </div>
                   <div className="text-xs muted">
-                    XP: {w.xpEarned} · ${w.dollarsEarned.toFixed(2)} · 🎁 {w.chestsLooted}
+                    XP: {w.xpEarned}
+                    {w.bonusXPEarned > 0 && (
+                      <span className="text-diamond"> +{w.bonusXPEarned} bonus</span>
+                    )}
+                    {" · "}
+                    ${(w.dollarsEarned + w.bonusDollarsEarned).toFixed(2)}
+                    {" · 🎁 "}
+                    {w.chestsLooted}
                   </div>
                 </div>
               ))}

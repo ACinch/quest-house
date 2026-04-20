@@ -252,6 +252,65 @@ a one-line guard in `Dashboard.tsx` and `SkillsView.tsx`.
 - Adults: 500 XP = 1 milestone reward, alternating House → Personal.
 - All thresholds, drop rates, and caps live in **Settings**.
 
+## Weekly Boss system
+
+Each week one area of the house becomes a **Minecraft mob** with an
+HP bar. The family chips away at it over the course of the week by
+completing tasks that deal damage. When HP reaches zero the boss is
+defeated — bonus XP for every participant, plus a tiered treasure
+chest for Winter.
+
+**Starter bosses:**
+- 🟢 Kitchen Creeper (10 tasks, 115 HP)
+- 🧟 Living Room Zombie Horde (9 tasks, 95 HP)
+- 🟩 Bathroom Slime (7 tasks, 80 HP) — half bath
+- 💀 Dining Room Skeleton (6 tasks, 80 HP)
+- ☠️ Bonus Room Wither (8 tasks, 120 HP)
+- 🐉 Ender Dragon (capstone, ~490 HP — all room bosses combined)
+
+**How it works:**
+- A parent picks the week's boss at `/boss/select`, then customizes
+  the task list at `/boss/customize` — toggle tasks off that aren't
+  relevant this week, add custom one-off tasks, and hit Spawn.
+- During the week, family members mark tasks done from `/boss`. Each
+  task has a `damage` value (how much HP it removes) and an `xp`
+  value (the XP reward to the person who did it — independent of
+  damage per spec).
+- Winter can't self-confirm: a parent has to tap Done on her behalf.
+  The active-view dashboard makes this natural — a parent viewing
+  Winter's dashboard tap-and-credits to Winter automatically.
+- Completing a zone-matched skill (e.g. `k_mop_kitchen` while the
+  Kitchen Creeper is active) **also** deals damage to the boss. The
+  skill's normal XP still fires — no double-counting, the damage
+  table in `src/lib/data/boss-damage-map.ts` is independent of
+  skill XP.
+- Any skill with `zone: "any"` (floors, surfaces, waste) damages
+  whichever boss is currently active.
+
+**Rewards on defeat:**
+- Per-participant damage % decides your chest tier:
+  - **Stone** (1–10%) — 5 bonus XP
+  - **Iron** (11–25%) — 10 bonus XP
+  - **Gold** (26–45%) — 15 bonus XP
+  - **Diamond** (46–70%) — 25 bonus XP
+  - **Netherite** (71%+) — 40 bonus XP
+- Adults get **bonus XP only**.
+- Winter also gets a tiered **chest drop** into her inventory,
+  drawn from `DEFAULT_WINTER_CHEST_POOL` at the matching tier.
+- Winter's bonus XP **bypasses the weekly cap** for the dollar
+  calculation — every bonus XP always converts to Greenlight
+  money, even if her regular weekly XP is already at 100.
+- Any participation >0 floors to Stone tier — even one small task
+  on a huge boss is rewarded.
+
+**Weekly rollover:**
+- Undefeated bosses at week end **despawn** by default (logged as
+  expired, no rewards). Set `carryOverUndefeated: true` in
+  Settings → Bosses to keep fights going week-to-week.
+- In rotate mode, the store auto-picks the next boss from the
+  rotation order into `"spawning"` state. A parent still has to
+  finish setup and hit Spawn.
+
 ## Customization
 
 - **Custom Quests** (Settings → Custom Quests) — add new "adulting" tasks to
@@ -259,6 +318,9 @@ a one-line guard in `Dashboard.tsx` and `SkillsView.tsx`.
   adults' skill trees automatically.
 - **Chest Pool** (Settings → Chest Pool) — edit the slips that get drawn
   when a chest drops, per user.
+- **Bosses** (Settings → Bosses) — selection mode (manual / rotate),
+  carry-over behavior, enable/disable the feature entirely, and
+  manual reset for the active boss.
 - **Weekend Reset Level** (Settings) — Level 1 (20–30 min) → Level 2
   (40–50 min) → Level 3 (60–90 min). Start small, level up when ready.
 - **Theme** — currently only Minecraft. The skill tree structure is

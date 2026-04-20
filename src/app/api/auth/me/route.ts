@@ -3,6 +3,7 @@ import {
   getCredentials,
   getCredentialsConfigured,
   getSessionFromRequest,
+  roleFor,
 } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
     user: {
       id: session.uid,
       username: cred?.username ?? session.uid,
+      role: roleFor(session.uid),
     },
     credentialsConfigured: true,
     secretConfigured: true,
