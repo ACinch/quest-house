@@ -18,7 +18,7 @@ import {
   WinterSkillDef,
   WinterSkillState,
 } from "./types";
-import { buildDefaultState } from "./defaults";
+import { buildDefaultState, backfillState } from "./defaults";
 import { SKILL_BRANCHES, branchesForUserWithCustom, findSkillWithCustom, isBossBranch, rankFor } from "./skills";
 import {
   WINTER_SKILLS,
@@ -575,13 +575,7 @@ export const useStore = create<QuestHouseStore>()(
       resetState: () => set({ state: buildDefaultState(), pendingChest: null, activeUser: "winter" }),
 
       importState: (incoming) => {
-        const defaults = buildDefaultState();
-        const merged: AppState = {
-          ...incoming,
-          bosses: incoming.bosses ?? defaults.bosses,
-          winterChestPool: incoming.winterChestPool ?? defaults.winterChestPool,
-        };
-        set({ state: merged, pendingChest: null });
+        set({ state: backfillState(incoming), pendingChest: null });
       },
 
       exportState: () => get().state,
@@ -1747,6 +1741,14 @@ export const useStore = create<QuestHouseStore>()(
       name: "quest-house-state-v1",
       storage: createJSONStorage(() => (typeof window !== "undefined" ? window.localStorage : (undefined as unknown as Storage))),
       partialize: (s) => ({ state: s.state, activeUser: s.activeUser }),
+      merge: (persisted, current) => {
+        const p = persisted as Partial<QuestHouseStore>;
+        return {
+          ...current,
+          ...(p.activeUser !== undefined && { activeUser: p.activeUser }),
+          ...(p.state !== undefined && { state: backfillState(p.state as AppState) }),
+        };
+      },
     }
   )
 );
