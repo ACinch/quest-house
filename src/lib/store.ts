@@ -574,7 +574,15 @@ export const useStore = create<QuestHouseStore>()(
 
       resetState: () => set({ state: buildDefaultState(), pendingChest: null, activeUser: "winter" }),
 
-      importState: (incoming) => set({ state: incoming, pendingChest: null }),
+      importState: (incoming) => {
+        const defaults = buildDefaultState();
+        const merged: AppState = {
+          ...incoming,
+          bosses: incoming.bosses ?? defaults.bosses,
+          winterChestPool: incoming.winterChestPool ?? defaults.winterChestPool,
+        };
+        set({ state: merged, pendingChest: null });
+      },
 
       exportState: () => get().state,
 
@@ -1387,8 +1395,9 @@ export const useStore = create<QuestHouseStore>()(
       selectBoss: (bossId) =>
         set((s) => {
           const def = BOSSES_BY_ID[bossId];
-          if (!def || !s.state.bosses) return s;
+          if (!def) return s;
 
+          const bosses = s.state.bosses ?? buildDefaultState().bosses!;
           const now = nowISO();
           const weekStart = weekStartForDate();
           const weekEnd = getWeekEndForStart(weekStart);
@@ -1428,7 +1437,7 @@ export const useStore = create<QuestHouseStore>()(
             state: {
               ...s.state,
               bosses: {
-                ...s.state.bosses,
+                ...bosses,
                 active,
                 pendingDefeat: null,
               },
