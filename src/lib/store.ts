@@ -477,6 +477,9 @@ export interface QuestHouseStore {
   /** Redeem a Winter inventory item. Wildcards go to resolveWildcard. */
   redeemInventoryItem: (itemId: string) => void;
 
+  /** Parent-only: remove an item from Winter's inventory entirely. */
+  removeInventoryItem: (itemId: string) => void;
+
   /** Resolve a "tier of choice" wildcard by picking a tier. */
   resolveWildcardSlip: (itemId: string, chosenTier: ChestTier) => void;
 
@@ -1032,6 +1035,17 @@ export const useStore = create<QuestHouseStore>()(
             i.id === itemId ? { ...i, redeemed: true, redeemedAt: nowISO() } : i
           );
           user.inventory = nextInventory;
+          return {
+            state: { ...s.state, users: { ...s.state.users, winter: user } },
+          };
+        }),
+
+      removeInventoryItem: (itemId) =>
+        set((s) => {
+          const user = { ...s.state.users.winter };
+          const inventory = user.inventory ?? [];
+          if (!inventory.some((i) => i.id === itemId)) return s;
+          user.inventory = inventory.filter((i) => i.id !== itemId);
           return {
             state: { ...s.state, users: { ...s.state.users, winter: user } },
           };
