@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { useStore } from "@/lib/store";
+import { useSession } from "@/lib/auth-client";
 import ChestDropModal from "./ChestDropModal";
 import BossDefeatCelebration from "./BossDefeatCelebration";
 import UserSwitcher from "./UserSwitcher";
@@ -30,6 +31,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const rolloverWeekIfNeeded = useStore((s) => s.rolloverWeekIfNeeded);
   const activeUser = useStore((s) => s.activeUser);
+  const { data: sessionUser } = useSession();
+  const users = useStore((s) => s.state.users);
+
+  const viewingOtherUser =
+    sessionUser && sessionUser.role === "parent" && activeUser !== sessionUser.id;
 
   useEffect(() => {
     rolloverWeekIfNeeded();
@@ -62,6 +68,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <UserSwitcher />
         </div>
       </header>
+
+      {viewingOtherUser && (
+        <div
+          className="px-3 py-1.5 text-center"
+          style={{ background: "#3a2a10", borderBottom: "2px solid #FFD700" }}
+        >
+          <div className="font-pixel text-[9px] text-yellow-300 max-w-2xl mx-auto">
+            {users[sessionUser.id].displayName.toUpperCase()} viewing {users[activeUser].displayName.toUpperCase()}&apos;s account
+          </div>
+        </div>
+      )}
 
       <main className="main-content flex-1 px-3 py-4 max-w-2xl mx-auto w-full">
         {children}
