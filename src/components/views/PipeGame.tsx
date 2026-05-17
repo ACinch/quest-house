@@ -4,9 +4,32 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 type Dir = "N" | "E" | "S" | "W";
-type PipeType = "H" | "V" | "NE" | "NW" | "SE" | "SW";
+type PipeType =
+  | "H"
+  | "V"
+  | "NE"
+  | "NW"
+  | "SE"
+  | "SW"
+  | "TNES"
+  | "TNEW"
+  | "TNSW"
+  | "TESW"
+  | "X";
 
-const ALL_PIPES: PipeType[] = ["H", "V", "NE", "NW", "SE", "SW"];
+const ALL_PIPES: PipeType[] = [
+  "H",
+  "V",
+  "NE",
+  "NW",
+  "SE",
+  "SW",
+  "TNES",
+  "TNEW",
+  "TNSW",
+  "TESW",
+  "X",
+];
 
 const PIPE_CONNECTIONS: Record<PipeType, Dir[]> = {
   H: ["W", "E"],
@@ -15,6 +38,11 @@ const PIPE_CONNECTIONS: Record<PipeType, Dir[]> = {
   NW: ["N", "W"],
   SE: ["S", "E"],
   SW: ["S", "W"],
+  TNES: ["N", "E", "S"],
+  TNEW: ["N", "E", "W"],
+  TNSW: ["N", "S", "W"],
+  TESW: ["E", "S", "W"],
+  X: ["N", "E", "S", "W"],
 };
 
 const OPPOSITE: Record<Dir, Dir> = { N: "S", S: "N", E: "W", W: "E" };
@@ -32,6 +60,11 @@ const PIPE_LABEL: Record<PipeType, string> = {
   NW: "North↔West",
   SE: "South↔East",
   SW: "South↔West",
+  TNES: "T (N·E·S)",
+  TNEW: "T (N·E·W)",
+  TNSW: "T (N·S·W)",
+  TESW: "T (E·S·W)",
+  X: "Cross",
 };
 
 type Cell =
@@ -40,22 +73,41 @@ type Cell =
   | { kind: "end"; dir: Dir }
   | { kind: "pipe"; type: PipeType };
 
+interface EndPoint {
+  x: number;
+  y: number;
+  dir: Dir;
+}
+
 interface Level {
   cols: number;
   rows: number;
-  start: { x: number; y: number; dir: Dir };
-  end: { x: number; y: number; dir: Dir };
+  start: EndPoint;
+  ends: EndPoint[];
   inventory: Record<PipeType, number>;
   // optimal length, for scoring/info
   pathLen: number;
 }
 
-function findPipeType(a: Dir, b: Dir): PipeType | null {
+function dirSetKey(dirs: Iterable<Dir>): string {
+  return (["N", "E", "S", "W"] as Dir[])
+    .filter((d) => {
+      for (const x of dirs) if (x === d) return true;
+      return false;
+    })
+    .join("");
+}
+
+const CONNS_TO_TYPE: Record<string, PipeType> = (() => {
+  const map: Record<string, PipeType> = {};
   for (const t of ALL_PIPES) {
-    const c = PIPE_CONNECTIONS[t];
-    if (c.includes(a) && c.includes(b)) return t;
+    map[dirSetKey(PIPE_CONNECTIONS[t])] = t;
   }
-  return null;
+  return map;
+})();
+
+function pipeForConnections(dirs: Set<Dir>): PipeType | null {
+  return CONNS_TO_TYPE[dirSetKey(dirs)] ?? null;
 }
 
 type Difficulty = "easy" | "medium" | "hard" | "expert";
@@ -75,14 +127,77 @@ interface DifficultyConfig {
   baseLen: number;
   lenPerLevel: number;
   decoys: number;
+  // Number of branch endpoints in addition to the trunk's. 0 = single end.
+  branches: number;
+  // Length of each side branch
+  branchLen: number;
 }
 
 const DIFFICULTY_CONFIG: Record<Difficulty, DifficultyConfig> = {
-  easy:   { cols: 5, rows: 6,  baseLen: 4,  lenPerLevel: 0.5, decoys: 1 },
-  medium: { cols: 6, rows: 8,  baseLen: 7,  lenPerLevel: 1,   decoys: 2 },
-  hard:   { cols: 7, rows: 9,  baseLen: 10, lenPerLevel: 1,   decoys: 3 },
-  expert: { cols: 8, rows: 10, baseLen: 14, lenPerLevel: 1.5, decoys: 5 },
+  easy:   { cols: 5, rows: 6,  baseLen: 4,  lenPerLevel: 0.5, decoys: 1, branches: 0, branchLen: 0 },
+  medium: { cols: 6, rows: 8,  baseLen: 7,  lenPerLevel: 1,   decoys: 2, branches: 0, branchLen: 0 },
+  hard:   { cols: 7, rows: 9,  baseLen: 9,  lenPerLevel: 1,   decoys: 3, branches: 1, branchLen: 3 },
+  expert: { cols: 8, rows: 10, baseLen: 12, lenPerLevel: 1.5, decoys: 5, branches: 2, branchLen: 4 },
 };
+
+function randomWalk(
+  cols: number,
+  rows: number,
+  startX: number,
+  startY: number,
+  firstDir: Dir | null,
+  targetLen: number,
+  blocked: Set<string>,
+): { path: Array<{ x: number; y: number }>; moves: Dir[] } {
+  const visited = new Set(blocked);
+  const path: Array<{ x: number; y: number }> = [];
+  const moves: Dir[] = [];
+  let cx = startX;
+  let cy = startY;
+  path.push({ x: cx, y: cy });
+  visited.add(`${cx},${cy}`);
+  let nextForcedDir: Dir | null = firstDir;
+
+  while (path.length < targetLen) {
+    const lastDir = moves.length > 0 ? moves[moves.length - 1] : null;
+    let options: Dir[];
+    if (nextForcedDir) {
+      options = [nextForcedDir];
+      nextForcedDir = null;
+    } else {
+      options = (Object.keys(DELTA) as Dir[]).filter((d) => {
+        if (lastDir && d === OPPOSITE[lastDir]) return false;
+        const [dx, dy] = DELTA[d];
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return false;
+        if (visited.has(`${nx},${ny}`)) return false;
+        return true;
+      });
+    }
+    if (options.length === 0) break;
+
+    let chosen: Dir;
+    if (options.length > 1 && lastDir && Math.random() < 0.55) {
+      const turns = options.filter((d) => d !== lastDir);
+      chosen =
+        turns.length > 0
+          ? turns[Math.floor(Math.random() * turns.length)]
+          : options[Math.floor(Math.random() * options.length)];
+    } else {
+      chosen = options[Math.floor(Math.random() * options.length)];
+    }
+
+    const [dx, dy] = DELTA[chosen];
+    cx += dx;
+    cy += dy;
+    moves.push(chosen);
+    visited.add(`${cx},${cy}`);
+    path.push({ x: cx, y: cy });
+  }
+
+  return { path, moves };
+}
 
 function generateLevel(
   difficulty: Difficulty,
@@ -96,8 +211,7 @@ function generateLevel(
     cols * rows - 2,
   );
 
-  // Try until we get a path long enough
-  for (let attempt = 0; attempt < 400; attempt++) {
+  for (let attempt = 0; attempt < 600; attempt++) {
     // Pick a random starting edge cell + the direction the pipe points INTO the grid
     const edges: Array<{ x: number; y: number; dir: Dir }> = [];
     for (let x = 0; x < cols; x++) {
@@ -110,154 +224,210 @@ function generateLevel(
     }
     const startSpot = edges[Math.floor(Math.random() * edges.length)];
 
-    // Random walk biased toward longer paths
-    const visited = new Set<string>();
-    const path: Array<{ x: number; y: number }> = [];
-    const moves: Dir[] = []; // direction taken to LEAVE each cell
+    const trunk = randomWalk(
+      cols,
+      rows,
+      startSpot.x,
+      startSpot.y,
+      startSpot.dir,
+      targetLen,
+      new Set<string>(),
+    );
+    if (trunk.path.length < Math.max(4, targetLen - 1)) continue;
+    if (trunk.moves.length === 0) continue;
 
-    let cx = startSpot.x;
-    let cy = startSpot.y;
-    path.push({ x: cx, y: cy });
-    visited.add(`${cx},${cy}`);
+    // Accumulate per-cell connection sets across the trunk and any branches.
+    const conns = new Map<string, Set<Dir>>();
+    const occupied = new Set<string>();
 
-    // First move must be in the start's pipe direction
-    let nextForcedDir: Dir | null = startSpot.dir;
-
-    while (path.length < targetLen) {
-      const lastDir = moves.length > 0 ? moves[moves.length - 1] : null;
-      let options: Dir[];
-      if (nextForcedDir) {
-        options = [nextForcedDir];
-        nextForcedDir = null;
-      } else {
-        options = (Object.keys(DELTA) as Dir[]).filter((d) => {
-          if (lastDir && d === OPPOSITE[lastDir]) return false;
-          const [dx, dy] = DELTA[d];
-          const nx = cx + dx;
-          const ny = cy + dy;
-          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return false;
-          if (visited.has(`${nx},${ny}`)) return false;
-          return true;
-        });
+    const addConn = (x: number, y: number, d: Dir) => {
+      const k = `${x},${y}`;
+      let set = conns.get(k);
+      if (!set) {
+        set = new Set<Dir>();
+        conns.set(k, set);
       }
+      set.add(d);
+      occupied.add(k);
+    };
 
-      if (options.length === 0) break;
-
-      // Bias toward turns to make the path more interesting
-      let chosen: Dir;
-      if (options.length > 1 && lastDir && Math.random() < 0.55) {
-        const turns = options.filter((d) => d !== lastDir);
-        chosen = turns.length > 0
-          ? turns[Math.floor(Math.random() * turns.length)]
-          : options[Math.floor(Math.random() * options.length)];
-      } else {
-        chosen = options[Math.floor(Math.random() * options.length)];
-      }
-
-      const [dx, dy] = DELTA[chosen];
-      const nx = cx + dx;
-      const ny = cy + dy;
-      // Stop if next step would force end onto a non-edge before reaching target
-      moves.push(chosen);
-      cx = nx;
-      cy = ny;
-      visited.add(`${cx},${cy}`);
-      path.push({ x: cx, y: cy });
+    // Trunk: cell i has an "out" toward moves[i] and an "in" from OPPOSITE[moves[i-1]]
+    for (let i = 0; i < trunk.path.length; i++) {
+      const c = trunk.path[i];
+      if (i > 0) addConn(c.x, c.y, OPPOSITE[trunk.moves[i - 1]]);
+      if (i < trunk.moves.length) addConn(c.x, c.y, trunk.moves[i]);
     }
 
-    if (path.length < Math.max(4, targetLen - 1)) continue;
-    if (moves.length === 0) continue;
+    // The trunk's terminal cell is one endpoint
+    const trunkEnd = trunk.path[trunk.path.length - 1];
+    const endpoints: EndPoint[] = [
+      {
+        x: trunkEnd.x,
+        y: trunkEnd.y,
+        dir: OPPOSITE[trunk.moves[trunk.moves.length - 1]],
+      },
+    ];
+    const endpointKeySet = new Set<string>([
+      `${trunkEnd.x},${trunkEnd.y}`,
+    ]);
 
-    // Compute the canonical pipe at each interior cell of the path
-    const solutionPipes: PipeType[] = [];
-    let solutionOk = true;
-    for (let i = 1; i < path.length - 1; i++) {
-      const inDir = OPPOSITE[moves[i - 1]]; // direction water enters from
-      const outDir = moves[i]; // direction water leaves
-      const t = findPipeType(inDir, outDir);
+    // Grow side branches from interior trunk cells (which currently have 2
+    // connections). Each branch becomes a new endpoint. We never grow from
+    // an existing endpoint — otherwise we'd convert that leaf into a T.
+    let branchAttempts = 0;
+    let branchesAdded = 0;
+    while (branchesAdded < cfg.branches && branchAttempts < 50) {
+      branchAttempts++;
+
+      // Candidate cells: any tree cell that still has at least one free side
+      // pointing into an unoccupied neighbor.
+      type Cand = { x: number; y: number; dir: Dir };
+      const candidates: Cand[] = [];
+      for (const [k, set] of conns) {
+        if (set.size >= 3) continue; // already a T; skip to avoid making a giant X
+        if (endpointKeySet.has(k)) continue;
+        const [xs, ys] = k.split(",").map(Number);
+        // Skip the start cell — keep start with a single connection
+        if (xs === startSpot.x && ys === startSpot.y) continue;
+        for (const d of Object.keys(DELTA) as Dir[]) {
+          if (set.has(d)) continue;
+          const [dx, dy] = DELTA[d];
+          const nx = xs + dx;
+          const ny = ys + dy;
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+          if (occupied.has(`${nx},${ny}`)) continue;
+          candidates.push({ x: xs, y: ys, dir: d });
+        }
+      }
+      if (candidates.length === 0) break;
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+
+      // Walk away from the picked side. The new branch's first cell is the
+      // neighbor through `pick.dir`. We treat that neighbor as the "start"
+      // of a sub-walk whose first move is constrained by where it came from.
+      const blocked = new Set<string>(occupied);
+      // Allow the branch parent to keep its slot but not be revisited
+      blocked.add(`${pick.x},${pick.y}`);
+      const [bdx, bdy] = DELTA[pick.dir];
+      const branchStart = { x: pick.x + bdx, y: pick.y + bdy };
+
+      const branch = randomWalk(
+        cols,
+        rows,
+        branchStart.x,
+        branchStart.y,
+        null,
+        cfg.branchLen,
+        blocked,
+      );
+      if (branch.path.length < 2) continue;
+
+      // Connect parent → first branch cell
+      addConn(pick.x, pick.y, pick.dir);
+      addConn(branch.path[0].x, branch.path[0].y, OPPOSITE[pick.dir]);
+      // Internal branch connections
+      for (let i = 0; i < branch.moves.length; i++) {
+        const c = branch.path[i];
+        const n = branch.path[i + 1];
+        addConn(c.x, c.y, branch.moves[i]);
+        addConn(n.x, n.y, OPPOSITE[branch.moves[i]]);
+      }
+
+      const tail = branch.path[branch.path.length - 1];
+      // The tail's single remaining connection is the one we just added when
+      // we arrived. Endpoint dir is that single direction.
+      const tailConns = conns.get(`${tail.x},${tail.y}`)!;
+      const tailDir = [...tailConns][0];
+      endpoints.push({ x: tail.x, y: tail.y, dir: tailDir });
+      endpointKeySet.add(`${tail.x},${tail.y}`);
+      branchesAdded++;
+    }
+
+    // Resolve each cell to a concrete pipe type.
+    const startKey = `${startSpot.x},${startSpot.y}`;
+    const endpointKeys = new Set(endpoints.map((e) => `${e.x},${e.y}`));
+
+    const solutionGrid: Cell[][] = Array.from({ length: rows }, () =>
+      Array.from({ length: cols }, (): Cell => ({ kind: "empty" })),
+    );
+    const inventory: Record<PipeType, number> = {
+      H: 0, V: 0, NE: 0, NW: 0, SE: 0, SW: 0,
+      TNES: 0, TNEW: 0, TNSW: 0, TESW: 0, X: 0,
+    };
+
+    let pipeOk = true;
+    for (const [k, set] of conns) {
+      if (k === startKey) continue;
+      if (endpointKeys.has(k)) continue;
+      const t = pipeForConnections(set);
       if (!t) {
-        solutionOk = false;
+        pipeOk = false;
         break;
       }
-      solutionPipes.push(t);
+      const [xs, ys] = k.split(",").map(Number);
+      solutionGrid[ys][xs] = { kind: "pipe", type: t };
+      inventory[t]++;
     }
-    if (!solutionOk) continue;
+    if (!pipeOk) continue;
 
-    // Build inventory: exactly enough of each pipe to solve, plus decoys
-    const inventory: Record<PipeType, number> = {
-      H: 0,
-      V: 0,
-      NE: 0,
-      NW: 0,
-      SE: 0,
-      SW: 0,
-    };
-    for (const t of solutionPipes) inventory[t]++;
     for (let i = 0; i < cfg.decoys; i++) {
       const t = ALL_PIPES[Math.floor(Math.random() * ALL_PIPES.length)];
+      // Restrict decoys to types appropriate for the difficulty
+      if (cfg.branches === 0 && (t.startsWith("T") || t === "X")) {
+        i--;
+        continue;
+      }
       inventory[t]++;
     }
 
-    const startCell = path[0];
-    const endCell = path[path.length - 1];
-    const startDir = moves[0];
-    const endEnterDir = moves[moves.length - 1];
-
+    // Build the player's empty starting grid (start + ends only)
     const grid: Cell[][] = Array.from({ length: rows }, () =>
       Array.from({ length: cols }, (): Cell => ({ kind: "empty" })),
     );
-    grid[startCell.y][startCell.x] = { kind: "start", dir: startDir };
-    grid[endCell.y][endCell.x] = { kind: "end", dir: OPPOSITE[endEnterDir] };
+    grid[startSpot.y][startSpot.x] = { kind: "start", dir: trunk.moves[0] };
+    for (const e of endpoints) {
+      grid[e.y][e.x] = { kind: "end", dir: e.dir };
+    }
+    // Also seed the solution grid with start/end markers for verification
+    solutionGrid[startSpot.y][startSpot.x] = { kind: "start", dir: trunk.moves[0] };
+    for (const e of endpoints) {
+      solutionGrid[e.y][e.x] = { kind: "end", dir: e.dir };
+    }
 
     const level: Level = {
       cols,
       rows,
-      start: { x: startCell.x, y: startCell.y, dir: startDir },
-      end: {
-        x: endCell.x,
-        y: endCell.y,
-        dir: OPPOSITE[endEnterDir],
-      },
+      start: { x: startSpot.x, y: startSpot.y, dir: trunk.moves[0] },
+      ends: endpoints,
       inventory,
-      pathLen: path.length,
+      pathLen: conns.size,
     };
 
-    // Solvability self-check: place the canonical pipes and verify the flow.
-    // If the simulated solve fails, this attempt is rejected and we generate
-    // another level — players never see an unsolvable board.
-    const solvedGrid = grid.map((row) => row.slice());
-    for (let i = 1; i < path.length - 1; i++) {
-      solvedGrid[path[i].y][path[i].x] = {
-        kind: "pipe",
-        type: solutionPipes[i - 1],
-      };
-    }
-    const verify = traceFlow(level, solvedGrid);
+    // Solvability self-check: simulate the canonical solution and verify the
+    // BFS flow reaches every endpoint. If not, throw this attempt out.
+    const verify = traceFlow(level, solutionGrid);
     if (!verify.complete) continue;
 
     return { level, grid };
   }
 
-  // Fallback to a simple straight level if generation failed
+  // Fallback: trivial single-row straight level (always solvable)
   const grid: Cell[][] = Array.from({ length: rows }, () =>
     Array.from({ length: cols }, (): Cell => ({ kind: "empty" })),
   );
   grid[0][0] = { kind: "start", dir: "E" };
   grid[0][cols - 1] = { kind: "end", dir: "W" };
   const inv: Record<PipeType, number> = {
-    H: cols - 2,
-    V: 0,
-    NE: 0,
-    NW: 0,
-    SE: 0,
-    SW: 0,
+    H: Math.max(0, cols - 2),
+    V: 0, NE: 0, NW: 0, SE: 0, SW: 0,
+    TNES: 0, TNEW: 0, TNSW: 0, TESW: 0, X: 0,
   };
   return {
     level: {
       cols,
       rows,
       start: { x: 0, y: 0, dir: "E" },
-      end: { x: cols - 1, y: 0, dir: "W" },
+      ends: [{ x: cols - 1, y: 0, dir: "W" }],
       inventory: inv,
       pathLen: cols,
     },
@@ -270,55 +440,87 @@ function traceFlow(
   grid: Cell[][],
 ): { filled: Set<string>; complete: boolean } {
   const filled = new Set<string>();
-  let cx = level.start.x;
-  let cy = level.start.y;
-  let dir: Dir = level.start.dir;
-  filled.add(`${cx},${cy}`);
+  const visitedWithEntry = new Set<string>();
+  const endByKey = new Map<string, Dir>();
+  for (const e of level.ends) endByKey.set(`${e.x},${e.y}`, e.dir);
 
-  // Safety counter
-  for (let i = 0; i < level.cols * level.rows + 2; i++) {
-    const [dx, dy] = DELTA[dir];
-    const nx = cx + dx;
-    const ny = cy + dy;
-    if (nx < 0 || ny < 0 || nx >= level.cols || ny >= level.rows) {
-      return { filled, complete: false };
-    }
-    const next = grid[ny][nx];
-    if (next.kind === "end") {
-      if (level.end.dir === OPPOSITE[dir]) {
-        filled.add(`${nx},${ny}`);
-        return { filled, complete: true };
+  const endsReached = new Set<string>();
+  const startKey = `${level.start.x},${level.start.y}`;
+  filled.add(startKey);
+
+  // Seed the queue with water leaving the start in its single direction
+  const queue: Array<{ x: number; y: number; entry: Dir }> = [];
+  const [sdx, sdy] = DELTA[level.start.dir];
+  queue.push({
+    x: level.start.x + sdx,
+    y: level.start.y + sdy,
+    entry: OPPOSITE[level.start.dir],
+  });
+
+  while (queue.length > 0) {
+    const { x, y, entry } = queue.shift()!;
+    if (x < 0 || y < 0 || x >= level.cols || y >= level.rows) continue;
+    const cell = grid[y][x];
+    const key = `${x},${y}`;
+
+    if (cell.kind === "end") {
+      if (endByKey.get(key) === entry) {
+        endsReached.add(key);
+        filled.add(key);
       }
-      return { filled, complete: false };
+      continue;
     }
-    if (next.kind !== "pipe") return { filled, complete: false };
-    const conns = PIPE_CONNECTIONS[next.type];
-    if (!conns.includes(OPPOSITE[dir])) return { filled, complete: false };
-    filled.add(`${nx},${ny}`);
-    const exitDir = conns.find((c) => c !== OPPOSITE[dir]);
-    if (!exitDir) return { filled, complete: false };
-    cx = nx;
-    cy = ny;
-    dir = exitDir;
+    if (cell.kind === "empty" || cell.kind === "start") continue;
+
+    const conns = PIPE_CONNECTIONS[cell.type];
+    if (!conns.includes(entry)) continue;
+
+    const visitKey = `${key}|${entry}`;
+    if (visitedWithEntry.has(visitKey)) continue;
+    visitedWithEntry.add(visitKey);
+    filled.add(key);
+
+    for (const exit of conns) {
+      if (exit === entry) continue;
+      const [dx, dy] = DELTA[exit];
+      queue.push({ x: x + dx, y: y + dy, entry: OPPOSITE[exit] });
+    }
   }
-  return { filled, complete: false };
+
+  const complete = level.ends.every((e) =>
+    endsReached.has(`${e.x},${e.y}`),
+  );
+  return { filled, complete };
 }
 
-function pipePath(type: PipeType): string {
+function pipePaths(type: PipeType): string[] {
   const C = 50;
   switch (type) {
     case "H":
-      return `M 0 ${C} L 100 ${C}`;
+      return [`M 0 ${C} L 100 ${C}`];
     case "V":
-      return `M ${C} 0 L ${C} 100`;
+      return [`M ${C} 0 L ${C} 100`];
     case "NE":
-      return `M ${C} 0 Q ${C} ${C} 100 ${C}`;
+      return [`M ${C} 0 Q ${C} ${C} 100 ${C}`];
     case "NW":
-      return `M ${C} 0 Q ${C} ${C} 0 ${C}`;
+      return [`M ${C} 0 Q ${C} ${C} 0 ${C}`];
     case "SE":
-      return `M ${C} 100 Q ${C} ${C} 100 ${C}`;
+      return [`M ${C} 100 Q ${C} ${C} 100 ${C}`];
     case "SW":
-      return `M ${C} 100 Q ${C} ${C} 0 ${C}`;
+      return [`M ${C} 100 Q ${C} ${C} 0 ${C}`];
+    default: {
+      // T or X — draw a straight stub from the center to each connected edge
+      const stubs: string[] = [];
+      for (const d of PIPE_CONNECTIONS[type]) {
+        switch (d) {
+          case "N": stubs.push(`M ${C} ${C} L ${C} 0`); break;
+          case "S": stubs.push(`M ${C} ${C} L ${C} 100`); break;
+          case "E": stubs.push(`M ${C} ${C} L 100 ${C}`); break;
+          case "W": stubs.push(`M ${C} ${C} L 0 ${C}`); break;
+        }
+      }
+      return stubs;
+    }
   }
 }
 
@@ -333,6 +535,7 @@ function PipeGlyph({
 }) {
   const outer = dim ? "#3a3a52" : "#6c6c84";
   const inner = filled ? "#4aedd9" : dim ? "#252538" : "#aaaac2";
+  const paths = pipePaths(type);
   return (
     <svg
       viewBox="0 0 100 100"
@@ -340,20 +543,26 @@ function PipeGlyph({
       height="100%"
       preserveAspectRatio="none"
     >
-      <path
-        d={pipePath(type)}
-        stroke={outer}
-        strokeWidth={32}
-        fill="none"
-        strokeLinecap="butt"
-      />
-      <path
-        d={pipePath(type)}
-        stroke={inner}
-        strokeWidth={18}
-        fill="none"
-        strokeLinecap="butt"
-      />
+      {paths.map((d, i) => (
+        <path
+          key={`o${i}`}
+          d={d}
+          stroke={outer}
+          strokeWidth={32}
+          fill="none"
+          strokeLinecap="butt"
+        />
+      ))}
+      {paths.map((d, i) => (
+        <path
+          key={`i${i}`}
+          d={d}
+          stroke={inner}
+          strokeWidth={18}
+          fill="none"
+          strokeLinecap="butt"
+        />
+      ))}
     </svg>
   );
 }
@@ -423,12 +632,8 @@ export default function PipeGame() {
   const [level, setLevel] = useState<Level | null>(null);
   const [grid, setGrid] = useState<Cell[][]>([]);
   const [inv, setInv] = useState<Record<PipeType, number>>({
-    H: 0,
-    V: 0,
-    NE: 0,
-    NW: 0,
-    SE: 0,
-    SW: 0,
+    H: 0, V: 0, NE: 0, NW: 0, SE: 0, SW: 0,
+    TNES: 0, TNEW: 0, TNSW: 0, TESW: 0, X: 0,
   });
   const [selected, setSelected] = useState<PipeType | null>(null);
   const [won, setWon] = useState(false);
@@ -513,7 +718,12 @@ export default function PipeGame() {
     setInv(restore);
   };
 
-  const drawerPipes = ALL_PIPES;
+  // Only show pipe types the current level actually serves up, so easy
+  // levels stay tidy and branching levels surface the T/cross pieces.
+  const drawerPipes = useMemo(
+    () => (level ? ALL_PIPES.filter((p) => (level.inventory[p] ?? 0) > 0) : []),
+    [level],
+  );
 
   if (!level) {
     return (
