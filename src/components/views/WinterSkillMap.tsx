@@ -29,11 +29,11 @@ import type { WinterSkillDef, WinterSkillState } from "@/lib/types";
  * full details. Parents can complete skills directly from the inspector.
  */
 
-const PADDING = 30;
-const COLUMN_WIDTH = 160;
-const ROW_HEIGHT = 90;
-const INTRA_CELL_STEP = 22;
-const NODE_RADIUS = 14;
+const PADDING = 40;
+const COLUMN_WIDTH = 190;
+const MIN_ROW_HEIGHT = 80;
+const INTRA_CELL_STEP = 30;
+const NODE_RADIUS = 16;
 
 interface NodePosition {
   x: number;
@@ -57,38 +57,67 @@ export default function WinterSkillMap() {
   const [zoom, setZoom] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Build positioned layout, skipping unrevealed hidden nodes.
-  const { laidOut, width, height, byId } = useMemo(() => {
-    // Bucket by (domain, depth)
+  // Build positioned layout, skipping empty domains and sizing rows dynamically.
+  const { laidOut, width, height, byId, activeDomains, domainY } = useMemo(() => {
+    // Collect visible skills and bucket by (domain, depth).
     const buckets: Record<string, WinterSkillDef[]> = {};
     const visible: WinterSkillDef[] = [];
+    const domainSkills: Record<string, WinterSkillDef[]> = {};
 
     for (const def of WINTER_SKILLS) {
       const st = skillTree[def.id];
       if (!st || !st.revealed) continue;
       visible.push(def);
+      (domainSkills[def.domain] ??= []).push(def);
       const depth = WINTER_SKILL_DEPTHS[def.id] ?? 0;
-      const domainIdx = WINTER_DOMAIN_ORDER.indexOf(def.domain);
-      const key = `${domainIdx}:${depth}`;
+      const key = `${def.domain}:${depth}`;
       (buckets[key] ??= []).push(def);
     }
 
+    // Only include domains that have visible skills.
+    const activeDomains = WINTER_DOMAIN_ORDER.filter(
+      (d) => (domainSkills[d]?.length ?? 0) > 0
+    );
+
+    // Compute row height per domain based on the largest bucket.
+    const domainRowHeight: Record<string, number> = {};
+    for (const domain of activeDomains) {
+      let maxBucket = 1;
+      for (const def of domainSkills[domain] ?? []) {
+        const depth = WINTER_SKILL_DEPTHS[def.id] ?? 0;
+        const key = `${domain}:${depth}`;
+        maxBucket = Math.max(maxBucket, (buckets[key]?.length ?? 1));
+      }
+      domainRowHeight[domain] = Math.max(
+        MIN_ROW_HEIGHT,
+        (maxBucket - 1) * INTRA_CELL_STEP + MIN_ROW_HEIGHT
+      );
+    }
+
+    // Accumulate Y positions per domain.
+    const domainY: Record<string, number> = {};
+    let yOffset = PADDING;
+    for (const domain of activeDomains) {
+      domainY[domain] = yOffset + domainRowHeight[domain] / 2;
+      yOffset += domainRowHeight[domain];
+    }
+
+    // Position each skill node.
     const laidOut: LaidOutSkill[] = [];
     for (const def of visible) {
       const depth = WINTER_SKILL_DEPTHS[def.id] ?? 0;
-      const domainIdx = WINTER_DOMAIN_ORDER.indexOf(def.domain);
-      const key = `${domainIdx}:${depth}`;
+      const key = `${def.domain}:${depth}`;
       const bucket = buckets[key] ?? [];
       const indexInBucket = bucket.indexOf(def);
       const bucketSize = bucket.length;
-      // Center the bucket around the row, offsetting within the cell.
+      const centerY = domainY[def.domain] ?? PADDING;
       const offset =
         (indexInBucket - (bucketSize - 1) / 2) * INTRA_CELL_STEP;
       laidOut.push({
         def,
         pos: {
           x: PADDING + depth * COLUMN_WIDTH,
-          y: PADDING + domainIdx * ROW_HEIGHT + offset,
+          y: centerY + offset,
         },
       });
     }
@@ -98,12 +127,12 @@ export default function WinterSkillMap() {
       ...laidOut.map((l) => WINTER_SKILL_DEPTHS[l.def.id] ?? 0)
     );
     const width = PADDING * 2 + (maxDepth + 1) * COLUMN_WIDTH;
-    const height = PADDING * 2 + WINTER_DOMAIN_ORDER.length * ROW_HEIGHT;
+    const height = yOffset + PADDING;
 
     const byId: Record<string, LaidOutSkill> = {};
     for (const l of laidOut) byId[l.def.id] = l;
 
-    return { laidOut, width, height, byId };
+    return { laidOut, width, height, byId, activeDomains, domainY };
   }, [skillTree]);
 
   const selected = selectedId ? byId[selectedId] : null;
@@ -159,9 +188,9 @@ export default function WinterSkillMap() {
           style={{ display: "block", minWidth: "100%" }}
         >
           {/* Domain row labels (subtle, left-aligned) */}
-          {WINTER_DOMAIN_ORDER.map((domain, idx) => {
+          {activeDomains.map((domain) => {
             const meta = WINTER_DOMAIN_META[domain];
-            const y = PADDING + idx * ROW_HEIGHT;
+            const y = domainY[domain];
             return (
               <g key={domain}>
                 <line
@@ -172,13 +201,15 @@ export default function WinterSkillMap() {
                   stroke="#2a2a3e"
                   strokeWidth={1}
                   strokeDasharray="2 4"
+                  opacity={0.5}
                 />
                 <text
                   x={6}
-                  y={y - 4}
+                  y={y - 6}
                   fontSize={8}
                   fill={meta.color}
                   fontFamily="Press Start 2P, monospace"
+                  opacity={0.6}
                 >
                   {meta.icon} {meta.displayName.toUpperCase()}
                 </text>
@@ -186,9 +217,9 @@ export default function WinterSkillMap() {
             );
           })}
 
-          {/* Connection lines (draw before nodes so they render behind) */}
+          {/* Connection curves (drawn before nodes so they render behind) */}
           {laidOut.map(({ def, pos }) => {
-            const lines: React.ReactNode[] = [];
+            const paths: React.ReactNode[] = [];
             for (const prereqId of def.prerequisites) {
               const from = byId[prereqId];
               if (!from) continue;
@@ -201,21 +232,21 @@ export default function WinterSkillMap() {
                 : active
                 ? "#4AEDD9"
                 : "#4a4a6a";
-              lines.push(
-                <line
+              const dx = (pos.x - from.pos.x) * 0.45;
+              const d = `M${from.pos.x},${from.pos.y} C${from.pos.x + dx},${from.pos.y} ${pos.x - dx},${pos.y} ${pos.x},${pos.y}`;
+              paths.push(
+                <path
                   key={`${prereqId}-${def.id}`}
-                  x1={from.pos.x}
-                  y1={from.pos.y}
-                  x2={pos.x}
-                  y2={pos.y}
+                  d={d}
+                  fill="none"
                   stroke={stroke}
-                  strokeWidth={bothUnlocked ? 2 : 1}
-                  strokeDasharray={active || bothUnlocked ? undefined : "3 3"}
-                  opacity={0.75}
+                  strokeWidth={bothUnlocked ? 2.5 : 1.5}
+                  strokeDasharray={active || bothUnlocked ? undefined : "4 4"}
+                  opacity={0.6}
                 />
               );
             }
-            return <g key={`lines-${def.id}`}>{lines}</g>;
+            return <g key={`lines-${def.id}`}>{paths}</g>;
           })}
 
           {/* Skill nodes */}
@@ -270,9 +301,9 @@ export default function WinterSkillMap() {
                   />
                 )}
                 <text
-                  y={3}
+                  y={4}
                   textAnchor="middle"
-                  fontSize={12}
+                  fontSize={14}
                   fill="#fff"
                   pointerEvents="none"
                 >
@@ -282,18 +313,18 @@ export default function WinterSkillMap() {
                     ? domainMeta.icon
                     : "?"}
                 </text>
-                {/* Small label under the node (truncated) */}
+                {/* Label under the node */}
                 <text
-                  y={NODE_RADIUS + 10}
+                  y={NODE_RADIUS + 12}
                   textAnchor="middle"
-                  fontSize={7}
-                  fill={state.unlocked ? "#f5f5f5" : "#6a6a80"}
+                  fontSize={8}
+                  fill={state.unlocked ? "#e5e5ef" : "#6a6a80"}
                   fontFamily="VT323, monospace"
                   pointerEvents="none"
                 >
                   {state.unlocked
-                    ? def.name.length > 16
-                      ? def.name.slice(0, 15) + "…"
+                    ? def.name.length > 20
+                      ? def.name.slice(0, 19) + "…"
                       : def.name
                     : "???"}
                 </text>

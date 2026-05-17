@@ -18,7 +18,7 @@ import {
   WinterSkillDef,
   WinterSkillState,
 } from "./types";
-import { buildDefaultState } from "./defaults";
+import { buildDefaultState, backfillState } from "./defaults";
 import { SKILL_BRANCHES, branchesForUserWithCustom, findSkillWithCustom, isBossBranch, rankFor } from "./skills";
 import {
   WINTER_SKILLS,
@@ -477,6 +477,9 @@ export interface QuestHouseStore {
   /** Redeem a Winter inventory item. Wildcards go to resolveWildcard. */
   redeemInventoryItem: (itemId: string) => void;
 
+  /** Parent-only: remove an item from Winter's inventory entirely. */
+  removeInventoryItem: (itemId: string) => void;
+
   /** Resolve a "tier of choice" wildcard by picking a tier. */
   resolveWildcardSlip: (itemId: string, chosenTier: ChestTier) => void;
 
@@ -574,7 +577,9 @@ export const useStore = create<QuestHouseStore>()(
 
       resetState: () => set({ state: buildDefaultState(), pendingChest: null, activeUser: "winter" }),
 
-      importState: (incoming) => set({ state: incoming, pendingChest: null }),
+      importState: (incoming) => {
+        set({ state: backfillState(incoming), pendingChest: null });
+      },
 
       exportState: () => get().state,
 
@@ -1035,6 +1040,17 @@ export const useStore = create<QuestHouseStore>()(
           };
         }),
 
+      removeInventoryItem: (itemId) =>
+        set((s) => {
+          const user = { ...s.state.users.winter };
+          const inventory = user.inventory ?? [];
+          if (!inventory.some((i) => i.id === itemId)) return s;
+          user.inventory = inventory.filter((i) => i.id !== itemId);
+          return {
+            state: { ...s.state, users: { ...s.state.users, winter: user } },
+          };
+        }),
+
       resolveWildcardSlip: (itemId, chosenTier) =>
         set((s) => {
           const user = { ...s.state.users.winter };
@@ -1387,8 +1403,9 @@ export const useStore = create<QuestHouseStore>()(
       selectBoss: (bossId) =>
         set((s) => {
           const def = BOSSES_BY_ID[bossId];
-          if (!def || !s.state.bosses) return s;
+          if (!def) return s;
 
+          const bosses = s.state.bosses ?? buildDefaultState().bosses!;
           const now = nowISO();
           const weekStart = weekStartForDate();
           const weekEnd = getWeekEndForStart(weekStart);
@@ -1428,7 +1445,7 @@ export const useStore = create<QuestHouseStore>()(
             state: {
               ...s.state,
               bosses: {
-                ...s.state.bosses,
+                ...bosses,
                 active,
                 pendingDefeat: null,
               },
@@ -1738,6 +1755,14 @@ export const useStore = create<QuestHouseStore>()(
       name: "quest-house-state-v1",
       storage: createJSONStorage(() => (typeof window !== "undefined" ? window.localStorage : (undefined as unknown as Storage))),
       partialize: (s) => ({ state: s.state, activeUser: s.activeUser }),
+      merge: (persisted, current) => {
+        const p = persisted as Partial<QuestHouseStore>;
+        return {
+          ...current,
+          ...(p.activeUser !== undefined && { activeUser: p.activeUser }),
+          ...(p.state !== undefined && { state: backfillState(p.state as AppState) }),
+        };
+      },
     }
   )
 );

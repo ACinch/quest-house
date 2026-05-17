@@ -210,5 +210,41 @@ export function buildDefaultState(): AppState {
   };
 }
 
+/**
+ * Backfill optional fields that may be missing from older serialized
+ * state (server sync or localStorage). For Winter's skillTree, also
+ * adds entries for any skills defined after the state was last saved.
+ */
+export function backfillState(incoming: AppState): AppState {
+  const defaults = buildDefaultState();
+
+  const state: AppState = {
+    ...incoming,
+    bosses: incoming.bosses ?? defaults.bosses,
+    winterChestPool: incoming.winterChestPool ?? defaults.winterChestPool,
+  };
+
+  const winter = state.users.winter;
+  if (winter) {
+    const defaultSkills = buildWinterSkillTree();
+    const existingSkills = winter.skillTree?.skills ?? {};
+    const mergedSkills: Record<string, WinterSkillState> = {
+      ...defaultSkills,
+      ...existingSkills,
+    };
+
+    state.users = {
+      ...state.users,
+      winter: {
+        ...winter,
+        skillTree: { skills: mergedSkills },
+        inventory: winter.inventory ?? [],
+      },
+    };
+  }
+
+  return state;
+}
+
 // Make these available at module-level for use elsewhere if needed
 export const SKILL_BRANCH_INDEX = SKILL_BRANCHES;

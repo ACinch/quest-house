@@ -31,8 +31,11 @@ export default function InventoryView() {
   const isParent = useIsParent();
   const parentGrantWinterChest = useStore((s) => s.parentGrantWinterChest);
 
+  const removeInventoryItem = useStore((s) => s.removeInventoryItem);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wildcardTarget, setWildcardTarget] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "available" | "redeemed">(
     "available"
   );
@@ -114,6 +117,7 @@ export default function InventoryView() {
                 <InventorySlot
                   key={item.id}
                   item={item}
+                  canRemove={isParent}
                   onTap={() => {
                     if (item.redeemed) return;
                     if (item.wildcardKind === "tier_choice") {
@@ -122,6 +126,7 @@ export default function InventoryView() {
                       setSelectedId(item.id);
                     }
                   }}
+                  onRemove={() => setRemoveTarget(item.id)}
                 />
               ))}
             </div>
@@ -182,6 +187,18 @@ export default function InventoryView() {
           }}
         />
       )}
+
+      {/* Remove confirmation (parent-only) */}
+      {removeTarget && (
+        <RemoveModal
+          itemId={removeTarget}
+          onClose={() => setRemoveTarget(null)}
+          onConfirm={() => {
+            removeInventoryItem(removeTarget);
+            setRemoveTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -192,44 +209,62 @@ export default function InventoryView() {
 
 function InventorySlot({
   item,
+  canRemove,
   onTap,
+  onRemove,
 }: {
   item: InventoryItem;
+  canRemove: boolean;
   onTap: () => void;
+  onRemove: () => void;
 }) {
   const meta = CHEST_TIER_META[item.tier];
   const dim = item.redeemed;
   const wildcard = item.wildcardKind === "tier_choice" && !item.redeemed;
   return (
-    <button
-      type="button"
-      className="pixel-border p-2 text-left"
-      style={{
-        background: dim ? "#1a1a2e" : "#2a2a3e",
-        borderColor: dim ? "#4a4a6a" : meta.color,
-        opacity: dim ? 0.45 : 1,
-        minHeight: 110,
-      }}
-      onClick={onTap}
-      disabled={dim}
-    >
-      <div className="flex items-center justify-between">
-        <div
-          className="text-2xl"
-          style={{ filter: dim ? "grayscale(1)" : undefined }}
+    <div className="relative">
+      {canRemove && (
+        <button
+          type="button"
+          className="absolute -top-1.5 -right-1.5 z-10 w-5 h-5 rounded-full bg-[#1a1a2e] border border-[#FF5555] text-[#FF5555] text-[10px] leading-none flex items-center justify-center"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
         >
-          {wildcard ? "🎲" : meta.icon}
-        </div>
-        {dim && <div className="text-[8px] muted">USED</div>}
-      </div>
-      <div
-        className="text-[11px] leading-tight mt-1"
-        style={{ color: dim ? "#6a6a80" : "#f5f5f5" }}
+          ✕
+        </button>
+      )}
+      <button
+        type="button"
+        className="pixel-border p-2 text-left w-full"
+        style={{
+          background: dim ? "#1a1a2e" : "#2a2a3e",
+          borderColor: dim ? "#4a4a6a" : meta.color,
+          opacity: dim ? 0.45 : 1,
+          minHeight: 110,
+        }}
+        onClick={onTap}
+        disabled={dim}
       >
-        {item.reward}
-      </div>
-      <div className="text-[8px] muted mt-1">{item.category}</div>
-    </button>
+        <div className="flex items-center justify-between">
+          <div
+            className="text-2xl"
+            style={{ filter: dim ? "grayscale(1)" : undefined }}
+          >
+            {wildcard ? "🎲" : meta.icon}
+          </div>
+          {dim && <div className="text-[8px] muted">USED</div>}
+        </div>
+        <div
+          className="text-[11px] leading-tight mt-1"
+          style={{ color: dim ? "#6a6a80" : "#f5f5f5" }}
+        >
+          {item.reward}
+        </div>
+        <div className="text-[8px] muted mt-1">{item.category}</div>
+      </button>
+    </div>
   );
 }
 
@@ -333,6 +368,56 @@ function WildcardPickerModal({
       </div>
       <BackButton />
 
+    </div>
+  );
+}
+
+function RemoveModal({
+  itemId,
+  onClose,
+  onConfirm,
+}: {
+  itemId: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const item = useStore((s) =>
+    s.state.users.winter.inventory?.find((i) => i.id === itemId)
+  );
+  if (!item) return null;
+  const meta = CHEST_TIER_META[item.tier];
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="modal space-y-3">
+        <div className="text-center">
+          <div className="text-5xl">{meta.icon}</div>
+          <div
+            className="font-pixel text-[10px] mt-2 text-redstone"
+          >
+            REMOVE ITEM
+          </div>
+        </div>
+        <div className="panel panel-tight text-center">
+          <div className="text-sm">{item.reward}</div>
+          <div className="text-xs muted">{item.category}</div>
+        </div>
+        <div className="text-sm muted text-center">
+          Remove this from Winter&apos;s inventory? This can&apos;t be undone.
+        </div>
+        <div className="flex gap-2">
+          <button type="button" className="block-btn ghost flex-1" onClick={onClose}>
+            Keep it
+          </button>
+          <button
+            type="button"
+            className="block-btn flex-1"
+            style={{ background: "#FF5555", color: "#fff" }}
+            onClick={onConfirm}
+          >
+            Remove
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
